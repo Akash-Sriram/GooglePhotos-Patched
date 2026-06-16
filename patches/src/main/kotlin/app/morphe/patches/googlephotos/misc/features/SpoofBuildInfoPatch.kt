@@ -14,6 +14,8 @@ val spoofBuildInfoPatch = baseSpoofBuildInfoPatch {
         manufacturer = "Google",
         device = "marlin",
         product = "marlin",
+        hardware = "marlin",
+        id = "QP1A.191005.007.A3",
         model = "Pixel XL",
         fingerprint = "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys",
     )
