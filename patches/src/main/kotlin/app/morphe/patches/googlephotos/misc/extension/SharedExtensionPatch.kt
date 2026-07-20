@@ -23,7 +23,7 @@ private class HomeActivityInitHook : ExtensionHook(
 internal val homeActivityInitHook: ExtensionHook = HomeActivityInitHook()
 
 val sharedExtensionPatch = sharedExtensionPatch(
-    isYouTubeOrYouTubeMusic = true,
+    isYouTubeOrYouTubeMusic = false,
     homeActivityInitHook,
 )
 
