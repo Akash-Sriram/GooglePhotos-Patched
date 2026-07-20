@@ -1,3 +1,10 @@
+## [1.0.6](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.5...v1.0.6) (2026-07-20)
+
+
+### Bug Fixes
+
+* change googlephotos extension to base shared and remove unused cert pinning patch ([6c93248](https://github.com/Akash-Sriram/De-Vanced/commit/6c93248de1039ede74d92af8d4d18f4ce1b44787))
+
 ## [1.0.5](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.4...v1.0.5) (2026-07-20)
 
 

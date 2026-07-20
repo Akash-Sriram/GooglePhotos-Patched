@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-07-20T23:32:00",
-  "description": "## [1.0.5](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.4...v1.0.5) (2026-07-20)\n\n\n### Bug Fixes\n\n* **googlephotos:** make legacy check optional to prevent matching errors ([ffcf044](https://github.com/Akash-Sriram/De-Vanced/commit/ffcf0447961f9f4c0e214ec0c9ded7e7e775a4e6))\n* **googlephotos:** resolve classcast exception in smali string injection ([669f375](https://github.com/Akash-Sriram/De-Vanced/commit/669f37545acc687eb00d0fc2fe7d2fe749c34a7d))\n* **googlephotos:** resolve DCIM backup control patch compatibility issues ([8096849](https://github.com/Akash-Sriram/De-Vanced/commit/8096849b16c29fd04600fe1e830aeea5d09cad1f))",
-  "download_url": "https://github.com/Akash-Sriram/De-Vanced/releases/download/v1.0.5/patches-1.0.5.mpp",
+  "created_at": "2026-07-20T23:52:39",
+  "description": "## [1.0.6](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.5...v1.0.6) (2026-07-20)\n\n\n### Bug Fixes\n\n* change googlephotos extension to base shared and remove unused cert pinning patch ([6c93248](https://github.com/Akash-Sriram/De-Vanced/commit/6c93248de1039ede74d92af8d4d18f4ce1b44787))",
+  "download_url": "https://github.com/Akash-Sriram/De-Vanced/releases/download/v1.0.6/patches-1.0.6.mpp",
   "signature_download_url": "",
-  "version": "1.0.5"
+  "version": "1.0.6"
 }

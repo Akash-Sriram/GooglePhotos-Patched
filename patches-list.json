@@ -1,5 +1,5 @@
 {
-  "version": "1.0.5",
+  "version": "1.0.6",
   "appNames": {
     "com.google.android.apps.photos": "Google Photos"
   },
@@ -118,15 +118,6 @@
           ]
         }
       ],
-      "options": []
-    },
-    {
-      "name": "Override certificate pinning",
-      "description": "Overrides certificate pinning, allowing to inspect traffic via a proxy. This patch does not work with Reddit.",
-      "use": false,
-      "dependencies": [],
-      "compatiblePackages": null,
-      "compatibility": [],
       "options": []
     },
     {
