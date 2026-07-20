@@ -29,3 +29,11 @@ internal object InCameraFolderSetterFingerprint : Fingerprint(
     }
 )
 
+internal object LegacyDCIMCheckFingerprint : Fingerprint(
+    returnType = "Z",
+    parameters = listOf("Ljava/lang/String;"),
+    custom = { method, _ ->
+        method.referencesStringContaining("/dcim")
+    }
+)
+

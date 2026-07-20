@@ -6,6 +6,7 @@ import app.morphe.util.cloneMutable
 import app.morphe.util.getReference
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import app.morphe.patcher.patch.PatchException
@@ -84,6 +85,46 @@ val enableDCIMFoldersBackupControlPatch = bytecodePatch(
         classDef.methods.apply {
             remove(method)
             add(clonedMethod)
+        }
+
+        // 2. Patch the legacy DCIM check method
+        val legacyMethod = LegacyDCIMCheckFingerprint.methodOrNull
+        if (legacyMethod != null) {
+            val legacyClassDef = mutableClassDefBy(legacyMethod.definingClass)
+
+            val isStatic = AccessFlags.STATIC.isSet(legacyMethod.accessFlags)
+            val pathRegister = if (isStatic) "p0" else "p1"
+
+            val legacyN = legacyMethod.implementation!!.registerCount
+            val legacyPatchInstructions = buildList {
+                add("if-eqz $pathRegister, :cond_skip")
+                add("move-object v$legacyN, $pathRegister")
+                add("sget-object v${legacyN+1}, Ljava/util/Locale;->US:Ljava/util/Locale;")
+                add("invoke-virtual {v$legacyN, v${legacyN+1}}, Ljava/lang/String;->toLowerCase(Ljava/util/Locale;)Ljava/lang/String;")
+                add("move-result-object v$legacyN")
+                add("const-string v${legacyN+1}, \"/dcim/camera/\"")
+                add("invoke-virtual {v$legacyN, v${legacyN+1}}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z")
+                add("move-result v${legacyN+1}")
+                add("if-eqz v${legacyN+1}, :cond_skip")
+                add("const-string v${legacyN+1}, \"/dcim/camera\"")
+                add("invoke-virtual {v$legacyN, v${legacyN+1}}, Ljava/lang/String;->endsWith(Ljava/lang/String;)Z")
+                add("move-result v$legacyN")
+                add("if-eqz v$legacyN, :cond_skip")
+                add("const/4 v$legacyN, 0")
+                add("return v$legacyN")
+                add(":cond_skip")
+            }
+
+            val clonedLegacyMethod = legacyMethod.cloneMutable(
+                additionalRegisters = 4
+            )
+
+            clonedLegacyMethod.addInstructions(0, legacyPatchInstructions.joinToString("\n"))
+
+            legacyClassDef.methods.apply {
+                remove(legacyMethod)
+                add(clonedLegacyMethod)
+            }
         }
     }
 }
