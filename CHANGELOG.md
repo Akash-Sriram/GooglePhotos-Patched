@@ -1,3 +1,12 @@
+## [1.0.5](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.4...v1.0.5) (2026-07-20)
+
+
+### Bug Fixes
+
+* **googlephotos:** make legacy check optional to prevent matching errors ([ffcf044](https://github.com/Akash-Sriram/De-Vanced/commit/ffcf0447961f9f4c0e214ec0c9ded7e7e775a4e6))
+* **googlephotos:** resolve classcast exception in smali string injection ([669f375](https://github.com/Akash-Sriram/De-Vanced/commit/669f37545acc687eb00d0fc2fe7d2fe749c34a7d))
+* **googlephotos:** resolve DCIM backup control patch compatibility issues ([8096849](https://github.com/Akash-Sriram/De-Vanced/commit/8096849b16c29fd04600fe1e830aeea5d09cad1f))
+
 ## [1.0.4](https://github.com/RookieEnough/De-Vanced/compare/v1.0.3...v1.0.4) (2026-05-13)
 
 
