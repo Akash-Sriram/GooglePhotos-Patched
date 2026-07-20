@@ -35,7 +35,7 @@ jobs:
       - name: Build
         env:
           GITHUB_TOKEN: ${{ secrets.GPR_KEY }}
-        run: ./gradlew :patches:buildAndroid generatePatchesList
+        run: ./gradlew :patches:buildAndroid generatePatchesList -Pgpr.user=${{ github.actor }} -Pgpr.key=${{ secrets.GPR_KEY }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
