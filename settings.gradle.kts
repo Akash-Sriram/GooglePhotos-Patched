@@ -9,8 +9,10 @@ pluginManagement {
             name = "GitHubPackages"
             url = uri("https://maven.pkg.github.com/MorpheApp/registry")
             credentials {
-                username = providers.gradleProperty("gpr.user").getOrElse(System.getenv("GITHUB_ACTOR"))
-                password = providers.gradleProperty("gpr.key").getOrElse(System.getenv("GITHUB_TOKEN"))
+                val envUser = System.getenv("GITHUB_ACTOR")
+                val envToken = System.getenv("GITHUB_TOKEN")
+                username = if (!envUser.isNullOrEmpty()) envUser else providers.gradleProperty("gpr.user").getOrElse("")
+                password = if (!envToken.isNullOrEmpty()) envToken else providers.gradleProperty("gpr.key").getOrElse("")
             }
         }
         // Obtain baksmali/smali from source builds - https://github.com/iBotPeaches/smali
