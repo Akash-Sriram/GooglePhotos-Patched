@@ -121,6 +121,7 @@ jobs:
         run: |
           java -jar morphe-cli.jar patch \
             -p "${{ env.PATCH_PATH }}" \
+            -b \
             -o patched-google-photos-unsigned.apk \
             google-photos-base.apk
 
