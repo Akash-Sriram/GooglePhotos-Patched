@@ -82,24 +82,27 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
     html = fetch_url(variant_url).decode("utf-8")
     soup = BeautifulSoup(html, "html.parser")
     
-    detail_link = None
-    version_str = "unknown"
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if "/apk/google-inc/photos/google-photos-" in href and (href.endswith("-download/") or "android-apk-download" in href):
-            detail_link = urllib.parse.urljoin("https://www.apkmirror.com", href)
-            match = re.search(r'google-photos-([0-9\-]+)', href)
-            if match:
-                version_str = match.group(1).replace('-', '.').rstrip('.')
+    # Find links inside the main list widget or table widget first to avoid sidebars/trending list
+    list_containers = soup.find_all("div", class_=re.compile(r"list-widget|widget-area|table-row"))
+    for container in list_containers:
+        for a in container.find_all("a", href=True):
+            href = a["href"]
+            if "/apk/google-inc/photos/google-photos-" in href and (href.endswith("-download/") or "android-apk-download" in href):
+                detail_link = urllib.parse.urljoin("https://www.apkmirror.com", href)
+                match = re.search(r'google-photos-([0-9\-]+)', href)
+                if match:
+                    version_str = match.group(1).replace('-', '.').rstrip('.')
+                break
+        if detail_link:
             break
 
+    # Fallback to general page links search if no container found
     if not detail_link:
-        rows = soup.find_all("div", class_="table-row")
-        for row in rows:
-            a = row.find("a", class_="accent_color", href=True)
-            if a and "/apk/google-inc/photos/" in a["href"]:
-                detail_link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
-                match = re.search(r'google-photos-([0-9\-]+)', a["href"])
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "/apk/google-inc/photos/google-photos-" in href and (href.endswith("-download/") or "android-apk-download" in href):
+                detail_link = urllib.parse.urljoin("https://www.apkmirror.com", href)
+                match = re.search(r'google-photos-([0-9\-]+)', href)
                 if match:
                     version_str = match.group(1).replace('-', '.').rstrip('.')
                 break
