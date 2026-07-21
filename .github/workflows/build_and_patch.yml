@@ -120,8 +120,8 @@ jobs:
         if: steps.check_release.outputs.skip != 'true'
         run: |
           java -jar morphe-cli.jar patch \
-            --patch-bundle "${{ env.PATCH_PATH }}" \
-            --out patched-google-photos-unsigned.apk \
+            -p "${{ env.PATCH_PATH }}" \
+            -o patched-google-photos-unsigned.apk \
             google-photos-base.apk
 
       - name: Sign Patched APK
