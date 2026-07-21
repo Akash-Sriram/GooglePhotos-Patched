@@ -1,0 +1,139 @@
+name: Build, Patch and Release Google Photos
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs automatically every 6 hours
+  workflow_dispatch:
+    inputs:
+      direct_apk_url:
+        description: 'Direct APK Download URL (Optional fallback if APKMirror scraping fails)'
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  build-and-patch:
+    name: Build Patch & Release Google Photos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install beautifulsoup4 requests cloudscraper
+
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: burrunan/gradle-cache-action@v3
+
+      - name: Build Morphe Patches
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :patches:buildAndroid generatePatchesList
+
+      - name: Locate Patch Bundle
+        id: locate_patch
+        run: |
+          PATCH_FILE=$(find patches/build/libs -name "patches-*.mpp" -o -name "patches-*.jar" | head -n 1)
+          if [ -z "$PATCH_FILE" ]; then
+            echo "Error: Patch file not found!"
+            exit 1
+          fi
+          echo "PATCH_PATH=$PATCH_FILE" >> $GITHUB_ENV
+          echo "Found patch file: $PATCH_FILE"
+
+      - name: Setup Morphe CLI
+        run: |
+          CLI_URL=$(curl -s https://api.github.com/repos/MorpheApp/morphe-cli/releases/latest | grep "browser_download_url.*jar" | cut -d '"' -f 4 | head -n 1)
+          if [ -n "$CLI_URL" ]; then
+            echo "Downloading Morphe CLI from $CLI_URL"
+            curl -L -o morphe-cli.jar "$CLI_URL"
+          elif [ -f "MorpheTools/morphe-desktop-1.11.0-all.jar" ]; then
+            echo "Using local Morphe Desktop jar"
+            cp MorpheTools/morphe-desktop-1.11.0-all.jar morphe-cli.jar
+          else
+            echo "Fallback to ReVanced CLI"
+            REV_URL=$(curl -s https://api.github.com/repos/ReVanced/revanced-cli/releases/latest | grep "browser_download_url.*jar" | cut -d '"' -f 4 | head -n 1)
+            curl -L -o morphe-cli.jar "${REV_URL:-https://github.com/ReVanced/revanced-cli/releases/download/v4.6.0/revanced-cli-4.6.0-all.jar}"
+          fi
+
+      - name: Download Google Photos APK
+        id: download_apk
+        run: |
+          DIRECT_URL="${{ inputs.direct_apk_url }}"
+          if [ -n "$DIRECT_URL" ]; then
+            python .github/scripts/download_apk.py --direct-url "$DIRECT_URL" --output google-photos-base.apk
+          else
+            python .github/scripts/download_apk.py --output google-photos-base.apk
+          fi
+
+      - name: Patch Google Photos APK using Morphe CLI
+        run: |
+          java -jar morphe-cli.jar patch \
+            --patch-bundle "${{ env.PATCH_PATH }}" \
+            --out patched-google-photos-unsigned.apk \
+            google-photos-base.apk
+
+      - name: Sign Patched APK
+        run: |
+          # Create temporary keystore
+          keytool -genkey -v -keystore release.keystore -alias androidkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,OU=Android,O=Android,L=Unknown,ST=Unknown,C=US"
+          
+          # Determine version string
+          APK_VER="${{ steps.download_apk.outputs.apk_version }}"
+          if [ -z "$APK_VER" ]; then
+            APK_VER="build-${{ github.run_number }}"
+          fi
+          OUT_NAME="GooglePhotos-v${APK_VER}-patched-arm64-v8a.apk"
+          echo "RELEASE_APK_NAME=${OUT_NAME}" >> $GITHUB_ENV
+          echo "RELEASE_VERSION=${APK_VER}" >> $GITHUB_ENV
+
+          # Find zipalign & apksigner
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          $BUILD_TOOLS_DIR/zipalign -v 4 patched-google-photos-unsigned.apk patched-google-photos-aligned.apk
+          $BUILD_TOOLS_DIR/apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "${OUT_NAME}" patched-google-photos-aligned.apk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RELEASE_APK_NAME }}
+          path: ${{ env.RELEASE_APK_NAME }}
+
+      - name: Publish Patched APK Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        with:
+          tag_name: v${{ env.RELEASE_VERSION }}
+          name: Google Photos v${{ env.RELEASE_VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            ${{ env.RELEASE_APK_NAME }}
+            ${{ env.PATCH_PATH }}
+          token: ${{ secrets.GITHUB_TOKEN }}
