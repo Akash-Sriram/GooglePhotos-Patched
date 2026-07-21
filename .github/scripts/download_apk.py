@@ -119,16 +119,17 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
     detail_soup = BeautifulSoup(detail_html, "html.parser")
 
     download_page_link = None
-    for a in detail_soup.find_all("a", href=True):
-        if "download.php" in a["href"] or "android-apk-download/" in a["href"]:
-            download_page_link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
-            if "download.php" in a["href"]:
-                break
+    # Try finding the official download button first
+    btn = detail_soup.find("a", class_=re.compile(r"downloadButton|accent_bg"))
+    if btn and btn.get("href"):
+        download_page_link = urllib.parse.urljoin("https://www.apkmirror.com", btn["href"])
 
     if not download_page_link:
-        btn = detail_soup.find("a", class_=re.compile(r"downloadButton"))
-        if btn and btn.get("href"):
-            download_page_link = urllib.parse.urljoin("https://www.apkmirror.com", btn["href"])
+        for a in detail_soup.find_all("a", href=True):
+            if "download.php" in a["href"] or "android-apk-download/" in a["href"]:
+                download_page_link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
+                if "download.php" in a["href"]:
+                    break
 
     if not download_page_link:
         raise Exception("Could not find APK download button page.")
