@@ -163,5 +163,4 @@ jobs:
           prerelease: false
           files: |
             ${{ env.RELEASE_APK_NAME }}
-            ${{ env.PATCH_PATH }}
           token: ${{ secrets.GITHUB_TOKEN }}
