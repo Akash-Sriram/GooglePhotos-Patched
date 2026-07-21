@@ -78,17 +78,12 @@ jobs:
 
       - name: Setup Morphe CLI
         run: |
-          CLI_URL=$(curl -s https://api.github.com/repos/MorpheApp/morphe-cli/releases/latest | grep "browser_download_url.*jar" | cut -d '"' -f 4 | head -n 1)
-          if [ -n "$CLI_URL" ]; then
-            echo "Downloading Morphe CLI from $CLI_URL"
-            curl -L -o morphe-cli.jar "$CLI_URL"
-          elif [ -f "De-Vanced/MorpheTools/morphe-desktop-1.11.0-all.jar" ]; then
-            echo "Using local Morphe Desktop jar from De-Vanced"
+          if [ -f "De-Vanced/MorpheTools/morphe-desktop-1.11.0-all.jar" ]; then
+            echo "Using Morphe Desktop CLI from De-Vanced/MorpheTools"
             cp De-Vanced/MorpheTools/morphe-desktop-1.11.0-all.jar morphe-cli.jar
           else
-            echo "Fallback to ReVanced CLI"
-            REV_URL=$(curl -s https://api.github.com/repos/ReVanced/revanced-cli/releases/latest | grep "browser_download_url.*jar" | cut -d '"' -f 4 | head -n 1)
-            curl -L -o morphe-cli.jar "${REV_URL:-https://github.com/ReVanced/revanced-cli/releases/download/v4.6.0/revanced-cli-4.6.0-all.jar}"
+            echo "Error: Morphe Desktop CLI jar not found in De-Vanced/MorpheTools!"
+            exit 1
           fi
 
       - name: Download Google Photos APK
@@ -121,7 +116,6 @@ jobs:
         run: |
           java -jar morphe-cli.jar patch \
             -p "${{ env.PATCH_PATH }}" \
-            -b \
             -o patched-google-photos-unsigned.apk \
             google-photos-base.apk
 
