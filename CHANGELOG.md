@@ -1,3 +1,10 @@
+## [1.0.7](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.6...v1.0.7) (2026-07-21)
+
+
+### Bug Fixes
+
+* restore GmsCoreSupportPatch to shared extension module ([ec9ce23](https://github.com/Akash-Sriram/De-Vanced/commit/ec9ce239f2159c5f6219b48a1431663f5a1005de))
+
 ## [1.0.6](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.5...v1.0.6) (2026-07-20)
 
 
