@@ -15,34 +15,67 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
 }
 
+def get_scraper():
+    try:
+        import cloudscraper
+        return cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
+    except ImportError:
+        return None
+
 def fetch_url(url, extra_headers=None):
     headers = HEADERS.copy()
     if extra_headers:
         headers.update(extra_headers)
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        return resp.read()
+    scraper = get_scraper()
+    if scraper:
+        resp = scraper.get(url, headers=headers)
+        return resp.content
+    else:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req) as resp:
+            return resp.read()
 
 def download_file(url, output_path, extra_headers=None):
     headers = HEADERS.copy()
     if extra_headers:
         headers.update(extra_headers)
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req) as resp, open(output_path, "wb") as out_file:
-        total = int(resp.headers.get("Content-Length", 0))
-        downloaded = 0
-        block_size = 8192
-        while True:
-            buffer = resp.read(block_size)
-            if not buffer:
-                break
-            downloaded += len(buffer)
-            out_file.write(buffer)
-            if total > 0:
-                percent = downloaded / total * 100
-                sys.stdout.write(f"\rDownloading: {percent:.1f}% ({downloaded}/{total} bytes)")
-                sys.stdout.flush()
-        print()
+    scraper = get_scraper()
+    if scraper:
+        resp = scraper.get(url, headers=headers, stream=True)
+        content_type = resp.headers.get("Content-Type", "")
+        if "text/html" in content_type:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            link = soup.find("a", id="download-link")
+            if not link:
+                for a in soup.find_all("a", href=True):
+                    if "key=" in a["href"] or "download.php" in a["href"]:
+                        link = a
+                        break
+            if link and link.get("href"):
+                direct_href = urllib.parse.urljoin(url, link["href"])
+                print(f"Following direct download link: {direct_href}")
+                resp = scraper.get(direct_href, headers=headers, stream=True)
+        with open(output_path, "wb") as out_file:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    out_file.write(chunk)
+    else:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req) as resp, open(output_path, "wb") as out_file:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            block_size = 8192
+            while True:
+                buffer = resp.read(block_size)
+                if not buffer:
+                    break
+                downloaded += len(buffer)
+                out_file.write(buffer)
+                if total > 0:
+                    percent = downloaded / total * 100
+                    sys.stdout.write(f"\rDownloading: {percent:.1f}% ({downloaded}/{total} bytes)")
+                    sys.stdout.flush()
+            print()
 
 def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
     print(f"Scraping variant list from: {variant_url}")
