@@ -131,8 +131,9 @@ jobs:
           # Create temporary keystore
           keytool -genkey -v -keystore release.keystore -alias androidkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,OU=Android,O=Android,L=Unknown,ST=Unknown,C=US"
           
-          # Determine version string
+          # Determine version string and sanitize trailing dots
           APK_VER="${{ steps.download_apk.outputs.apk_version }}"
+          APK_VER=$(echo "$APK_VER" | sed -e 's/[^0-9.]//g' -e 's/\.*$//')
           if [ -z "$APK_VER" ]; then
             APK_VER="build-${{ github.run_number }}"
           fi

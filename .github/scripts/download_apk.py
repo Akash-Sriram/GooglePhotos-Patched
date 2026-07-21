@@ -90,7 +90,7 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
             detail_link = urllib.parse.urljoin("https://www.apkmirror.com", href)
             match = re.search(r'google-photos-([0-9\-]+)', href)
             if match:
-                version_str = match.group(1).replace('-', '.')
+                version_str = match.group(1).replace('-', '.').rstrip('.')
             break
 
     if not detail_link:
@@ -101,7 +101,7 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
                 detail_link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
                 match = re.search(r'google-photos-([0-9\-]+)', a["href"])
                 if match:
-                    version_str = match.group(1).replace('-', '.')
+                    version_str = match.group(1).replace('-', '.').rstrip('.')
                 break
 
     if check_version_only:
