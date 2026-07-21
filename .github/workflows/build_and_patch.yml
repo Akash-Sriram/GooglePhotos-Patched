@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: read
       actions: write
     steps:
       - name: Checkout Release Repository
@@ -62,7 +63,7 @@ jobs:
         run: |
           cd De-Vanced
           chmod +x gradlew
-          ./gradlew :patches:buildAndroid generatePatchesList
+          ./gradlew :patches:buildAndroid generatePatchesList -Pgpr.user=${{ github.actor }} -Pgpr.key=${{ secrets.GITHUB_TOKEN }}
 
       - name: Locate Patch Bundle
         id: locate_patch
