@@ -1,3 +1,10 @@
+## [1.0.8](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.7...v1.0.8) (2026-07-21)
+
+
+### Bug Fixes
+
+* inline changePackageNamePatch as private implementation to hide it ([0976e55](https://github.com/Akash-Sriram/De-Vanced/commit/0976e55733cf04a58ee1c4fc3270b7e3d7affbe5))
+
 ## [1.0.7](https://github.com/Akash-Sriram/De-Vanced/compare/v1.0.6...v1.0.7) (2026-07-21)
 
 

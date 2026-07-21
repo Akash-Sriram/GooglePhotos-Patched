@@ -1,48 +1,9 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.8",
   "appNames": {
     "com.google.android.apps.photos": "Google Photos"
   },
   "patches": [
-    {
-      "name": "Change package name",
-      "description": "Appends \".morphe\" to the package name by default. Changing the package name of the app can lead to unexpected issues. This patch does not work with Reddit.",
-      "use": false,
-      "dependencies": [],
-      "compatiblePackages": null,
-      "compatibility": [],
-      "options": [
-        {
-          "key": "packageName",
-          "title": "Package name",
-          "description": "The name of the package to rename the app to.",
-          "required": true,
-          "type": "kotlin.String",
-          "default": "Default",
-          "values": {
-            "Default": "Default"
-          }
-        },
-        {
-          "key": "updatePermissions",
-          "title": "Update permissions",
-          "description": "Update compatibility receiver permissions. Enabling this can fix installation errors, but this can also break features in certain apps.",
-          "required": false,
-          "type": "kotlin.Boolean",
-          "default": false,
-          "values": null
-        },
-        {
-          "key": "updateProviders",
-          "title": "Update providers",
-          "description": "Update provider names declared by the app. Enabling this can fix installation errors, but this can also break features in certain apps.",
-          "required": false,
-          "type": "kotlin.Boolean",
-          "default": false,
-          "values": null
-        }
-      ]
-    },
     {
       "name": "Enable DCIM folders backup control",
       "description": "Disables always on backup for the Camera and other DCIM folders, allowing you to control backup for each folder individually. This will make the app default to having no folders backed up.",
