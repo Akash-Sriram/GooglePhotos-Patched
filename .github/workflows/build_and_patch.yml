@@ -100,7 +100,23 @@ jobs:
             python .github/scripts/download_apk.py --output google-photos-base.apk
           fi
 
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK_VER="${{ steps.download_apk.outputs.apk_version }}"
+          if [ -n "$APK_VER" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+            TAG="v${APK_VER}"
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Release $TAG already exists in ${{ github.repository }}. Skipping duplicate build."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
       - name: Patch Google Photos APK using Morphe CLI
+        if: steps.check_release.outputs.skip != 'true'
         run: |
           java -jar morphe-cli.jar patch \
             --patch-bundle "${{ env.PATCH_PATH }}" \
@@ -108,6 +124,7 @@ jobs:
             google-photos-base.apk
 
       - name: Sign Patched APK
+        if: steps.check_release.outputs.skip != 'true'
         run: |
           # Create temporary keystore
           keytool -genkey -v -keystore release.keystore -alias androidkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,OU=Android,O=Android,L=Unknown,ST=Unknown,C=US"
@@ -127,14 +144,15 @@ jobs:
           $BUILD_TOOLS_DIR/apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "${OUT_NAME}" patched-google-photos-aligned.apk
 
       - name: Upload Artifact
+        if: steps.check_release.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.RELEASE_APK_NAME }}
           path: ${{ env.RELEASE_APK_NAME }}
 
       - name: Publish Patched APK Release
+        if: steps.check_release.outputs.skip != 'true' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         with:
           tag_name: v${{ env.RELEASE_VERSION }}
           name: Google Photos v${{ env.RELEASE_VERSION }}
