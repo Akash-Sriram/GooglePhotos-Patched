@@ -2,12 +2,12 @@ group = "app.morphe"
 
 patches {
     about {
-        name = "De-Vanced Patches"
-        description = "ReVanced patches, ported for Morphe."
-        source = "https://github.com/RookieEnough/De-ReVanced"
-        author = "De-Vanced"
+        name = "Morphe Photo Patches"
+        description = "Google Photos patches, ported for Morphe."
+        source = "https://github.com/Akash-Sriram/De-Vanced"
+        author = "Morphe Photo Patches"
         contact = "na"
-        website = "https://github.com/RookieEnough/De-ReVanced"
+        website = "https://github.com/Akash-Sriram/De-Vanced"
         license = "GNU General Public License v3.0, with additional GPL section 7 requirements"
     }
 }
