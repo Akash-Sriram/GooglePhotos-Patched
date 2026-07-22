@@ -129,6 +129,9 @@ jobs:
       - name: Sign Patched APK
         if: steps.check_release.outputs.skip != 'true'
         run: |
+          # Decode keystore from secret
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
           # Determine version string and sanitize trailing dots
           APK_VER="${{ steps.get_apk_ver.outputs.apk_version }}"
           APK_VER=$(echo "$APK_VER" | sed -e 's/[^0-9.]//g' -e 's/\.*$//')
@@ -143,6 +146,9 @@ jobs:
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
           $BUILD_TOOLS_DIR/zipalign -v 4 patched-google-photos-unsigned.apk patched-google-photos-aligned.apk
           $BUILD_TOOLS_DIR/apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "${OUT_NAME}" patched-google-photos-aligned.apk
+          
+          # Clean up decrypted keystore
+          rm -f release.keystore
 
       - name: Upload Artifact
         if: steps.check_release.outputs.skip != 'true'
