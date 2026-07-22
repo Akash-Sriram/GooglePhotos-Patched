@@ -7,7 +7,7 @@ import urllib.request
 import urllib.parse
 from bs4 import BeautifulSoup
 
-DEFAULT_VARIANT_URL = "https://www.apkmirror.com/apk/google-inc/photos/variant-%7B%22dpis_slug%22%3A%5B%22nodpi%22%5D%2C%22arches_slug%22%3A%5B%22arm64-v8a%22%5D%7D/"
+DEFAULT_VARIANT_URL = "https://www.apkmirror.com/apk/google-inc/photos/variant-%7B%22dpis_slug%22%3A%5B%22nodpi%22%5D%2C%22arches_slug%22%3A%5B%22arm64-v8a%22%2C%22armeabi-v7a%22%2C%22x86%22%2C%22x86_64%22%5D%7D/"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
