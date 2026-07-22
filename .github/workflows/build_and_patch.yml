@@ -123,6 +123,7 @@ jobs:
         run: |
           java -jar morphe-cli.jar patch \
             -p "${{ env.PATCH_PATH }}" \
+            --unsigned \
             -o patched-google-photos-unsigned.apk \
             google-photos-base.apk
 
@@ -145,6 +146,12 @@ jobs:
           # Find zipalign & apksigner
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
           $BUILD_TOOLS_DIR/zipalign -v 4 patched-google-photos-unsigned.apk patched-google-photos-aligned.apk
+
+          # Repack aligned APK to fix local file header / central directory zip mismatches (e.g. assets/AltFormats_27)
+          python -c "import zipfile; in_zip = zipfile.ZipFile('patched-google-photos-aligned.apk', 'r'); out_zip = zipfile.ZipFile('patched-google-photos-aligned-fixed.apk', 'w', compression=zipfile.ZIP_DEFLATED); [out_zip.writestr(item, in_zip.read(item.filename)) for item in in_zip.infolist()]; in_zip.close(); out_zip.close()"
+          mv patched-google-photos-aligned-fixed.apk patched-google-photos-aligned.apk
+
+          # Sign the repacked, zip-aligned APK
           $BUILD_TOOLS_DIR/apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "${OUT_NAME}" patched-google-photos-aligned.apk
           
           # Clean up decrypted keystore
