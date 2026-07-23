@@ -68,7 +68,7 @@ jobs:
       - name: Locate Patch Bundle
         id: locate_patch
         run: |
-          PATCH_FILE=$(find De-Vanced/patches/build/libs -name "patches-*.mpp" -o -name "patches-*.jar" | head -n 1)
+          PATCH_FILE=$(find De-Vanced/patches/build/libs \( -name "patches-*.mpp" -o -name "patches-*.jar" \) | grep -v "\-sources" | grep -v "\-javadoc" | head -n 1)
           if [ -z "$PATCH_FILE" ]; then
             echo "Error: Patch file not found!"
             exit 1
