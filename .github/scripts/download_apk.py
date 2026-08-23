@@ -291,24 +291,44 @@ def _playwright_worker(variant_url, output_path, check_version_only, result):
                 browser.close()
                 raise Exception("[playwright] Could not extract final download URL from APKMirror.")
 
-            # Step 4: download via Playwright's API request context.
-            # ctx.request shares the browser's session cookies (including the
-            # Cloudflare clearance token) but makes a plain HTTP GET — no
-            # download-event machinery, no asyncio.run() nesting.
-            print(f"[playwright] Downloading APK via browser session: {final_link}")
-            api_resp = ctx.request.get(
-                final_link,
-                headers={"Referer": dl_page},
-                timeout=300_000,
-            )
-            if api_resp.status != 200:
-                browser.close()
-                raise Exception(
-                    f"[playwright] Download request returned HTTP {api_resp.status}"
+            # Step 4: run fetch() inside Chromium's JS engine.
+            # ctx.request / curl_cffi / urllib all use non-browser HTTP stacks
+            # which APKMirror's Cloudflare Bot Management fingerprints and
+            # rejects (403). Running fetch() inside the page uses Chromium's
+            # actual network stack — same TLS fingerprint, same session cookies.
+            # The binary is returned as base64 and decoded in Python.
+            print(f"[playwright] Downloading APK via browser fetch(): {final_link}")
+            page.set_default_timeout(300_000)  # 5 min for large APK
+            import base64
+            try:
+                b64_data = page.evaluate(
+                    """async ([url, referer]) => {
+                        const resp = await fetch(url, {
+                            credentials: 'include',
+                            headers: { 'Referer': referer }
+                        });
+                        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                        const buf  = await resp.arrayBuffer();
+                        const bytes = new Uint8Array(buf);
+                        const CHUNK = 32768;
+                        let bin = '';
+                        for (let i = 0; i < bytes.length; i += CHUNK) {
+                            bin += String.fromCharCode(
+                                ...bytes.subarray(i, Math.min(i + CHUNK, bytes.length))
+                            );
+                        }
+                        return btoa(bin);
+                    }""",
+                    [final_link, dl_page],
                 )
-            print(f"[playwright] Saving to: {output_path}")
+            except Exception as js_err:
+                browser.close()
+                raise Exception(f"[playwright] Browser fetch() failed: {js_err}")
+
+            apk_bytes = base64.b64decode(b64_data)
+            print(f"[playwright] Saving {len(apk_bytes):,} bytes to: {output_path}")
             with open(output_path, "wb") as fh:
-                fh.write(api_resp.body())
+                fh.write(apk_bytes)
             browser.close()
 
         result["version"] = version_str
