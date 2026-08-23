@@ -291,13 +291,24 @@ def _playwright_worker(variant_url, output_path, check_version_only, result):
                 browser.close()
                 raise Exception("[playwright] Could not extract final download URL from APKMirror.")
 
-            # Step 4: download within the live, Cloudflare-cleared browser session
+            # Step 4: download via Playwright's API request context.
+            # ctx.request shares the browser's session cookies (including the
+            # Cloudflare clearance token) but makes a plain HTTP GET — no
+            # download-event machinery, no asyncio.run() nesting.
             print(f"[playwright] Downloading APK via browser session: {final_link}")
-            with page.expect_download(timeout=300_000) as dl_info:
-                page.goto(final_link, wait_until="commit", timeout=60_000)
-            download = dl_info.value
+            api_resp = ctx.request.get(
+                final_link,
+                headers={"Referer": dl_page},
+                timeout=300_000,
+            )
+            if api_resp.status != 200:
+                browser.close()
+                raise Exception(
+                    f"[playwright] Download request returned HTTP {api_resp.status}"
+                )
             print(f"[playwright] Saving to: {output_path}")
-            download.save_as(output_path)
+            with open(output_path, "wb") as fh:
+                fh.write(api_resp.body())
             browser.close()
 
         result["version"] = version_str
