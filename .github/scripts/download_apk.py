@@ -214,97 +214,125 @@ def _pw_wait_for_cf(page, timeout=30000):
     page.wait_for_timeout(2000)
 
 
-def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=False):
+def _playwright_worker(variant_url, output_path, check_version_only, result):
+    """
+    Runs the full Playwright scrape+download in a dedicated thread.
+
+    Playwright's sync API uses asyncio.run() internally. If the calling
+    thread already has a running event loop (common in some CI environments),
+    this raises 'This event loop is already running'. Running in a fresh
+    thread guarantees a clean event loop state.
+    """
     from playwright.sync_api import sync_playwright
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            )
+            ctx = browser.new_context(
+                user_agent=HEADERS["User-Agent"],
+                viewport={"width": 1280, "height": 800},
+                locale="en-US",
+                extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+            )
+            page = ctx.new_page()
+            page.add_init_script(
+                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+            )
+
+            # Step 1: variant listing page
+            print(f"[playwright] → {variant_url}")
+            page.goto(variant_url, wait_until="domcontentloaded", timeout=60000)
+            _pw_wait_for_cf(page)
+
+            soup = BeautifulSoup(page.content(), "html.parser")
+            detail_link, version_str = _find_detail_link(soup)
+
+            if check_version_only:
+                browser.close()
+                if not version_str:
+                    raise Exception("[playwright] Could not determine version.")
+                print(f"LATEST_VERSION={version_str}")
+                result["version"] = version_str
+                return
+
+            if not detail_link:
+                browser.close()
+                raise Exception("[playwright] Could not find download link on APKMirror variant page.")
+
+            # Step 2: APK detail page
+            print(f"[playwright] → {detail_link}")
+            page.goto(detail_link, wait_until="domcontentloaded", timeout=60000)
+            _pw_wait_for_cf(page)
+
+            detail_soup = BeautifulSoup(page.content(), "html.parser")
+            dl_page = _find_download_page_link(detail_soup)
+            if not dl_page:
+                browser.close()
+                raise Exception("[playwright] Could not find APK download button page.")
+
+            # Step 3: download-button confirmation page
+            print(f"[playwright] → {dl_page}")
+            page.goto(dl_page, wait_until="domcontentloaded", timeout=60000)
+            _pw_wait_for_cf(page)
+
+            dl_html_raw = page.content()
+            dl_soup = BeautifulSoup(dl_html_raw, "html.parser")
+            final_link = _find_final_link(dl_soup, dl_html_raw)
+
+            if not final_link:
+                browser.close()
+                raise Exception("[playwright] Could not extract final download URL from APKMirror.")
+
+            # Step 4: download within the live, Cloudflare-cleared browser session
+            print(f"[playwright] Downloading APK via browser session: {final_link}")
+            with page.expect_download(timeout=300_000) as dl_info:
+                page.goto(final_link, wait_until="commit", timeout=60_000)
+            download = dl_info.value
+            print(f"[playwright] Saving to: {output_path}")
+            download.save_as(output_path)
+            browser.close()
+
+        result["version"] = version_str
+
+    except Exception as exc:
+        result["error"] = exc
+
+
+def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=False):
+    import threading
 
     print("[playwright] Launching headless Chromium to bypass Cloudflare...")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
-        ctx = browser.new_context(
-            user_agent=HEADERS["User-Agent"],
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-        )
-        page = ctx.new_page()
-        # Remove automation markers
-        page.add_init_script(
-            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
-        )
+    result = {}
+    t = threading.Thread(
+        target=_playwright_worker,
+        args=(variant_url, output_path, check_version_only, result),
+        daemon=True,
+    )
+    t.start()
+    # 6-minute timeout: 3 pages × ~30s CF wait + up to 5 min download
+    t.join(timeout=360)
 
-        # --- Step 1: variant page ---
-        print(f"[playwright] → {variant_url}")
-        page.goto(variant_url, wait_until="domcontentloaded", timeout=60000)
-        _pw_wait_for_cf(page)
+    if t.is_alive():
+        raise Exception("[playwright] Timed out after 6 minutes.")
+    if "error" in result:
+        raise result["error"]
 
-        soup = BeautifulSoup(page.content(), "html.parser")
-        detail_link, version_str = _find_detail_link(soup)
-
-        if check_version_only:
-            browser.close()
-            if not version_str:
-                raise Exception("[playwright] Could not determine version.")
-            print(f"LATEST_VERSION={version_str}")
-            return version_str
-
-        if not detail_link:
-            browser.close()
-            raise Exception("[playwright] Could not find download link on APKMirror variant page.")
-
-        # --- Step 2: detail page ---
-        print(f"[playwright] → {detail_link}")
-        page.goto(detail_link, wait_until="domcontentloaded", timeout=60000)
-        _pw_wait_for_cf(page)
-
-        detail_soup = BeautifulSoup(page.content(), "html.parser")
-        dl_page = _find_download_page_link(detail_soup)
-        if not dl_page:
-            browser.close()
-            raise Exception("[playwright] Could not find APK download button page.")
-
-        # --- Step 3: download-button page ---
-        print(f"[playwright] → {dl_page}")
-        page.goto(dl_page, wait_until="domcontentloaded", timeout=60000)
-        _pw_wait_for_cf(page)
-
-        dl_html_raw = page.content()
-        dl_soup = BeautifulSoup(dl_html_raw, "html.parser")
-        final_link = _find_final_link(dl_soup, dl_html_raw)
-
-        if not final_link:
-            browser.close()
-            raise Exception("[playwright] Could not extract final download URL from APKMirror.")
-
-        # --- Step 4: download the APK inside the live browser session ---
-        # Do NOT close the browser yet — APKMirror validates the download
-        # against the active Cloudflare-cleared session. Harvesting cookies
-        # and re-fetching from outside the browser gets 403.
-        print(f"[playwright] Downloading APK via browser session: {final_link}")
-        with page.expect_download(timeout=300_000) as dl_info:
-            # Navigate to download.php within the same session; Playwright
-            # intercepts the file download automatically.
-            page.goto(final_link, wait_until="commit", timeout=60_000)
-        download = dl_info.value
-        print(f"[playwright] Saving to: {output_path}")
-        download.save_as(output_path)
-        browser.close()
-
-    return version_str
-
+    return result.get("version", "unknown")
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Download Google Photos APK from APKMirror")
