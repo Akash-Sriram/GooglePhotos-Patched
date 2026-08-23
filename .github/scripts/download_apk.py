@@ -284,26 +284,23 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
             browser.close()
             raise Exception("[playwright] Could not extract final download URL from APKMirror.")
 
-        # Harvest cookies from the solved Cloudflare session
-        cookies = ctx.cookies()
+        # --- Step 4: download the APK inside the live browser session ---
+        # Do NOT close the browser yet — APKMirror validates the download
+        # against the active Cloudflare-cleared session. Harvesting cookies
+        # and re-fetching from outside the browser gets 403.
+        print(f"[playwright] Downloading APK via browser session: {final_link}")
+        with page.expect_download(timeout=300_000) as dl_info:
+            # Navigate to download.php within the same session; Playwright
+            # intercepts the file download automatically.
+            page.goto(final_link, wait_until="commit", timeout=60_000)
+        download = dl_info.value
+        print(f"[playwright] Saving to: {output_path}")
+        download.save_as(output_path)
         browser.close()
 
-    print(f"[playwright] Downloading APK: {final_link}")
-    cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
-    dl_headers = HEADERS.copy()
-    dl_headers["Cookie"] = cookie_str
-    dl_headers["Referer"] = dl_page
-
-    if HAS_CURL_CFFI:
-        resp = _cffi_get(final_link, dl_headers, stream=True)
-        _stream_to_file(resp, output_path)
-    else:
-        import urllib.request
-        req = urllib.request.Request(final_link, headers=dl_headers)
-        with urllib.request.urlopen(req) as resp, open(output_path, "wb") as fh:
-            fh.write(resp.read())
-
     return version_str
+
+
 
 # ---------------------------------------------------------------------------
 # Entry point
