@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Download Google Photos APK from APKMirror.
+Strategy:
+  1. Fast path: curl_cffi with Chrome TLS impersonation (no overhead).
+  2. Fallback: Playwright headless Chromium — executes the real Cloudflare JS
+     challenge and carries the resulting cookies through all APKMirror steps.
+"""
 import sys
 import os
 import re
@@ -9,13 +16,12 @@ try:
     from curl_cffi import requests as cffi_requests
     HAS_CURL_CFFI = True
 except ImportError:
-    import urllib.request
     HAS_CURL_CFFI = False
 
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    print("beautifulsoup4 not installed. Run: pip install beautifulsoup4 curl_cffi")
+    print("beautifulsoup4 not installed. Run: pip install beautifulsoup4 curl_cffi playwright")
     sys.exit(1)
 
 DEFAULT_VARIANT_URL = (
@@ -24,7 +30,6 @@ DEFAULT_VARIANT_URL = (
     "%22arches_slug%22%3A%5B%22arm64-v8a%22%2C%22armeabi-v7a%22%2C%22x86%22%2C%22x86_64%22%5D%7D/"
 )
 
-# Impersonate a real Chrome browser to pass Cloudflare TLS fingerprint checks
 IMPERSONATE = "chrome131"
 
 HEADERS = {
@@ -40,21 +45,33 @@ HEADERS = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _cffi_get(url, headers, stream=False):
+    resp = cffi_requests.get(url, headers=headers, impersonate=IMPERSONATE, stream=stream)
+    resp.raise_for_status()
+    return resp
+
 
 def fetch_url(url, extra_headers=None):
     headers = HEADERS.copy()
     if extra_headers:
         headers.update(extra_headers)
-
     if HAS_CURL_CFFI:
-        resp = cffi_requests.get(url, headers=headers, impersonate=IMPERSONATE)
-        resp.raise_for_status()
-        return resp.content
-    else:
-        import urllib.request
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req) as resp:
-            return resp.read()
+        return _cffi_get(url, headers).content
+    import urllib.request
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        return resp.read()
+
+
+def _stream_to_file(resp, output_path):
+    with open(output_path, "wb") as fh:
+        for chunk in resp.iter_content(chunk_size=8192):
+            if chunk:
+                fh.write(chunk)
 
 
 def download_file(url, output_path, extra_headers=None):
@@ -63,11 +80,9 @@ def download_file(url, output_path, extra_headers=None):
         headers.update(extra_headers)
 
     if HAS_CURL_CFFI:
-        resp = cffi_requests.get(url, headers=headers, impersonate=IMPERSONATE, stream=True)
-        resp.raise_for_status()
+        resp = _cffi_get(url, headers, stream=True)
         content_type = resp.headers.get("Content-Type", "")
         if "text/html" in content_type:
-            # We landed on an intermediate HTML download page — find the real link
             soup = BeautifulSoup(resp.text, "html.parser")
             link = soup.find("a", id="download-link")
             if not link:
@@ -77,171 +92,261 @@ def download_file(url, output_path, extra_headers=None):
                         break
             if link and link.get("href"):
                 direct_href = urllib.parse.urljoin(url, link["href"])
-                print(f"Following direct download link: {direct_href}")
-                resp = cffi_requests.get(
-                    direct_href, headers=headers, impersonate=IMPERSONATE, stream=True
-                )
-                resp.raise_for_status()
-        with open(output_path, "wb") as out_file:
-            for chunk in resp.iter_content(chunk_size=8192):
-                if chunk:
-                    out_file.write(chunk)
+                print(f"Following redirect link: {direct_href}")
+                resp = _cffi_get(direct_href, headers, stream=True)
+        _stream_to_file(resp, output_path)
     else:
         import urllib.request
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req) as resp, open(output_path, "wb") as out_file:
+        with urllib.request.urlopen(req) as resp, open(output_path, "wb") as fh:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
-            block_size = 8192
             while True:
-                buffer = resp.read(block_size)
-                if not buffer:
+                buf = resp.read(8192)
+                if not buf:
                     break
-                downloaded += len(buffer)
-                out_file.write(buffer)
-                if total > 0:
-                    percent = downloaded / total * 100
-                    sys.stdout.write(f"\rDownloading: {percent:.1f}% ({downloaded}/{total} bytes)")
+                downloaded += len(buf)
+                fh.write(buf)
+                if total:
+                    sys.stdout.write(f"\r{downloaded/total*100:.1f}%")
                     sys.stdout.flush()
             print()
 
+# ---------------------------------------------------------------------------
+# APKMirror HTML parsing helpers (shared by both paths)
+# ---------------------------------------------------------------------------
 
-def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
-    print(f"Scraping variant list from: {variant_url}")
-    html = fetch_url(variant_url).decode("utf-8")
-    soup = BeautifulSoup(html, "html.parser")
-
-    detail_link = None
-    version_str = None
-
-    # Try scoped containers first to avoid sidebar/trending noise
-    list_containers = soup.find_all("div", class_=re.compile(r"list-widget|widget-area|table-row"))
-    for container in list_containers:
-        for a in container.find_all("a", href=True):
+def _find_detail_link(soup):
+    """Return (detail_link, version_str) or (None, None)."""
+    containers = soup.find_all("div", class_=re.compile(r"list-widget|widget-area|table-row"))
+    candidates = containers if containers else [soup]
+    for root in candidates:
+        for a in root.find_all("a", href=True):
             href = a["href"]
             if "/apk/google-inc/photos/google-photos-" in href and (
                 href.endswith("-download/") or "android-apk-download" in href
             ):
-                detail_link = urllib.parse.urljoin("https://www.apkmirror.com", href)
-                match = re.search(r"google-photos-([0-9\-]+)", href)
-                if match:
-                    version_str = match.group(1).replace("-", ".").rstrip(".")
-                break
-        if detail_link:
-            break
+                link = urllib.parse.urljoin("https://www.apkmirror.com", href)
+                m = re.search(r"google-photos-([0-9\-]+)", href)
+                ver = m.group(1).replace("-", ".").rstrip(".") if m else None
+                return link, ver
+    return None, None
 
-    # Fallback: scan all links on the page
-    if not detail_link:
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            if "/apk/google-inc/photos/google-photos-" in href and (
-                href.endswith("-download/") or "android-apk-download" in href
-            ):
-                detail_link = urllib.parse.urljoin("https://www.apkmirror.com", href)
-                match = re.search(r"google-photos-([0-9\-]+)", href)
-                if match:
-                    version_str = match.group(1).replace("-", ".").rstrip(".")
-                break
 
-    if check_version_only:
-        if not version_str:
-            raise Exception("Could not determine latest version from APKMirror variant page.")
-        print(f"LATEST_VERSION={version_str}")
-        return version_str
-
-    if not detail_link:
-        raise Exception("Could not find download link on APKMirror variant page.")
-
-    print(f"Found APK detail page: {detail_link}")
-    detail_html = fetch_url(detail_link).decode("utf-8")
-    detail_soup = BeautifulSoup(detail_html, "html.parser")
-
-    download_page_link = None
-    # Try official download button first
+def _find_download_page_link(detail_soup):
     btn = detail_soup.find("a", class_=re.compile(r"downloadButton|accent_bg"))
     if btn and btn.get("href"):
-        download_page_link = urllib.parse.urljoin("https://www.apkmirror.com", btn["href"])
+        return urllib.parse.urljoin("https://www.apkmirror.com", btn["href"])
+    for a in detail_soup.find_all("a", href=True):
+        if "download.php" in a["href"] or "android-apk-download/" in a["href"]:
+            link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
+            if "download.php" in a["href"]:
+                return link
+    return None
 
-    if not download_page_link:
-        for a in detail_soup.find_all("a", href=True):
-            if "download.php" in a["href"] or "android-apk-download/" in a["href"]:
-                download_page_link = urllib.parse.urljoin(
-                    "https://www.apkmirror.com", a["href"]
-                )
-                if "download.php" in a["href"]:
-                    break
 
-    if not download_page_link:
-        raise Exception("Could not find APK download button page.")
-
-    print(f"Accessing download page: {download_page_link}")
-    dl_html = fetch_url(download_page_link).decode("utf-8")
-    dl_soup = BeautifulSoup(dl_html, "html.parser")
-
-    final_link = None
+def _find_final_link(dl_soup, dl_html):
     for a in dl_soup.find_all("a", href=True):
         if (
             "key=" in a["href"]
             or "/wp-content/themes/APKMirror/" in a["href"]
             or "download.php" in a["href"]
         ):
-            final_link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
-            break
+            return urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
+    m = re.search(r'href="(/apk/google-inc/photos/[^"]+key=[^"]+)"', dl_html)
+    if m:
+        return urllib.parse.urljoin("https://www.apkmirror.com", m.group(1))
+    return None
 
-    if not final_link:
-        match = re.search(r'href="(/apk/google-inc/photos/[^"]+key=[^"]+)"', dl_html)
-        if match:
-            final_link = urllib.parse.urljoin("https://www.apkmirror.com", match.group(1))
+# ---------------------------------------------------------------------------
+# Path 1: direct HTTP (fast, may fail with 403 on CI datacenter IPs)
+# ---------------------------------------------------------------------------
 
+def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
+    print(f"[direct] Fetching: {variant_url}")
+    html = fetch_url(variant_url).decode("utf-8")
+    soup = BeautifulSoup(html, "html.parser")
+
+    detail_link, version_str = _find_detail_link(soup)
+
+    if check_version_only:
+        if not version_str:
+            raise Exception("Could not determine version from APKMirror variant page.")
+        print(f"LATEST_VERSION={version_str}")
+        return version_str
+
+    if not detail_link:
+        raise Exception("Could not find download link on APKMirror variant page.")
+
+    print(f"[direct] Detail page: {detail_link}")
+    detail_html = fetch_url(detail_link).decode("utf-8")
+    detail_soup = BeautifulSoup(detail_html, "html.parser")
+
+    dl_page = _find_download_page_link(detail_soup)
+    if not dl_page:
+        raise Exception("Could not find APK download button page.")
+
+    print(f"[direct] Download page: {dl_page}")
+    dl_html_raw = fetch_url(dl_page).decode("utf-8")
+    dl_soup = BeautifulSoup(dl_html_raw, "html.parser")
+
+    final_link = _find_final_link(dl_soup, dl_html_raw)
     if not final_link:
         raise Exception("Could not extract final download URL from APKMirror.")
 
-    print(f"Downloading final APK from: {final_link}")
-    download_file(final_link, output_path, extra_headers={"Referer": download_page_link})
+    print(f"[direct] Downloading APK: {final_link}")
+    download_file(final_link, output_path, extra_headers={"Referer": dl_page})
     return version_str
 
+# ---------------------------------------------------------------------------
+# Path 2: Playwright (headless Chromium — solves Cloudflare JS challenge)
+# ---------------------------------------------------------------------------
+
+def _pw_wait_for_cf(page, timeout=30000):
+    """Wait until Cloudflare's 'Just a moment' interstitial clears."""
+    try:
+        page.wait_for_function(
+            "() => !document.title.includes('Just a moment') && document.readyState === 'complete'",
+            timeout=timeout,
+        )
+    except Exception:
+        pass  # best-effort — proceed even if timeout
+    page.wait_for_timeout(2000)
+
+
+def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=False):
+    from playwright.sync_api import sync_playwright
+
+    print("[playwright] Launching headless Chromium to bypass Cloudflare...")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+        ctx = browser.new_context(
+            user_agent=HEADERS["User-Agent"],
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+        )
+        page = ctx.new_page()
+        # Remove automation markers
+        page.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+        )
+
+        # --- Step 1: variant page ---
+        print(f"[playwright] → {variant_url}")
+        page.goto(variant_url, wait_until="domcontentloaded", timeout=60000)
+        _pw_wait_for_cf(page)
+
+        soup = BeautifulSoup(page.content(), "html.parser")
+        detail_link, version_str = _find_detail_link(soup)
+
+        if check_version_only:
+            browser.close()
+            if not version_str:
+                raise Exception("[playwright] Could not determine version.")
+            print(f"LATEST_VERSION={version_str}")
+            return version_str
+
+        if not detail_link:
+            browser.close()
+            raise Exception("[playwright] Could not find download link on APKMirror variant page.")
+
+        # --- Step 2: detail page ---
+        print(f"[playwright] → {detail_link}")
+        page.goto(detail_link, wait_until="domcontentloaded", timeout=60000)
+        _pw_wait_for_cf(page)
+
+        detail_soup = BeautifulSoup(page.content(), "html.parser")
+        dl_page = _find_download_page_link(detail_soup)
+        if not dl_page:
+            browser.close()
+            raise Exception("[playwright] Could not find APK download button page.")
+
+        # --- Step 3: download-button page ---
+        print(f"[playwright] → {dl_page}")
+        page.goto(dl_page, wait_until="domcontentloaded", timeout=60000)
+        _pw_wait_for_cf(page)
+
+        dl_html_raw = page.content()
+        dl_soup = BeautifulSoup(dl_html_raw, "html.parser")
+        final_link = _find_final_link(dl_soup, dl_html_raw)
+
+        if not final_link:
+            browser.close()
+            raise Exception("[playwright] Could not extract final download URL from APKMirror.")
+
+        # Harvest cookies from the solved Cloudflare session
+        cookies = ctx.cookies()
+        browser.close()
+
+    print(f"[playwright] Downloading APK: {final_link}")
+    cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+    dl_headers = HEADERS.copy()
+    dl_headers["Cookie"] = cookie_str
+    dl_headers["Referer"] = dl_page
+
+    if HAS_CURL_CFFI:
+        resp = _cffi_get(final_link, dl_headers, stream=True)
+        _stream_to_file(resp, output_path)
+    else:
+        import urllib.request
+        req = urllib.request.Request(final_link, headers=dl_headers)
+        with urllib.request.urlopen(req) as resp, open(output_path, "wb") as fh:
+            fh.write(resp.read())
+
+    return version_str
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Download Google Photos APK")
-    parser.add_argument("--direct-url", type=str, help="Direct URL to APK file")
-    parser.add_argument(
-        "--variant-url",
-        type=str,
-        default=DEFAULT_VARIANT_URL,
-        help="APKMirror variant page URL",
-    )
-    parser.add_argument(
-        "--output", type=str, default="google-photos.apk", help="Output path for downloaded APK"
-    )
-    parser.add_argument(
-        "--check-version", action="store_true", help="Only check and output latest version"
-    )
+    parser = argparse.ArgumentParser(description="Download Google Photos APK from APKMirror")
+    parser.add_argument("--direct-url", type=str, help="Skip scraping; download this URL directly")
+    parser.add_argument("--variant-url", type=str, default=DEFAULT_VARIANT_URL)
+    parser.add_argument("--output", type=str, default="google-photos.apk")
+    parser.add_argument("--check-version", action="store_true")
     args = parser.parse_args()
 
-    if args.check_version:
-        get_apkmirror_apk(args.variant_url, None, check_version_only=True)
-        return
-
+    # ---- direct URL shortcut ----
     if args.direct_url:
         print(f"Downloading direct URL: {args.direct_url}")
         download_file(args.direct_url, args.output)
         version_str = "unknown"
     else:
         version_str = "unknown"
+        # Try fast path first, fall back to Playwright
         try:
+            if args.check_version:
+                get_apkmirror_apk(args.variant_url, None, check_version_only=True)
+                return
             version_str = get_apkmirror_apk(args.variant_url, args.output)
         except Exception as e:
-            print(f"Error scraping APKMirror: {e}")
-            print(
-                "Notice: If APKMirror blocked the runner, pass --direct-url "
-                "or run the workflow with a direct input link."
-            )
-            sys.exit(1)
+            print(f"Direct scrape failed ({e}); retrying with Playwright…")
+            try:
+                if args.check_version:
+                    get_apkmirror_apk_playwright(args.variant_url, None, check_version_only=True)
+                    return
+                version_str = get_apkmirror_apk_playwright(args.variant_url, args.output)
+            except Exception as e2:
+                print(f"Playwright scrape also failed: {e2}")
+                print("Pass --direct-url or trigger the workflow with a direct APK link.")
+                sys.exit(1)
 
+    # ---- validate download ----
     if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
         print(
-            f"Successfully downloaded APK to {args.output} "
-            f"(Size: {os.path.getsize(args.output)} bytes)"
+            f"Successfully downloaded {args.output} "
+            f"({os.path.getsize(args.output):,} bytes)"
         )
         if "GITHUB_OUTPUT" in os.environ and version_str:
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:

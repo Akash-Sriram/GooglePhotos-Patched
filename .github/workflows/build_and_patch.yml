@@ -47,7 +47,8 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install beautifulsoup4 curl_cffi
+          pip install beautifulsoup4 curl_cffi playwright
+          playwright install chromium --with-deps
 
       - name: Setup Android SDK Tools
         uses: android-actions/setup-android@v3
