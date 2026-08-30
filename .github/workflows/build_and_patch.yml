@@ -58,6 +58,13 @@ jobs:
         with:
           build-root-directory: De-Vanced
 
+      - name: Overlay Custom Patches from GooglePhotos-Patched into De-Vanced
+        run: |
+          if [ -d "custom-patches" ]; then
+            echo "Copying custom-patches into De-Vanced..."
+            cp -r custom-patches/* De-Vanced/
+          fi
+
       - name: Build Morphe Patches from De-Vanced
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
