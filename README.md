@@ -1,15 +1,23 @@
 # Google Photos Patched
 
-Automated builds of Google Photos patched with [Akash-Sriram/De-Vanced](https://github.com/Akash-Sriram/De-Vanced).
+Automated builds of Google Photos patched with [De-Vanced](https://github.com/Akash-Sriram/De-Vanced).  
+Pre-built APKs: [GitHub Releases](https://github.com/Akash-Sriram/GooglePhotos-Patched/releases/latest)  
+*Requires [MicroG-RE](https://github.com/MorpheApp/MicroG-RE) for non-root Google account login.*
 
-## Workflow
+## ⚡ Features
 
-- **Base APK Source**: [APKMirror (nodpi, arm64-v8a)](https://www.apkmirror.com/apk/google-inc/photos/variant-%7B%22dpis_slug%22%3A%5B%22nodpi%22%5D%2C%22arches_slug%22%3A%5B%22arm64-v8a%22%2C%22armeabi-v7a%22%2C%22x86%22%2C%22x86_64%22%5D%7D/)
-- **Patcher**: Automatically compiles latest patches from `Akash-Sriram/De-Vanced` and patches via Morphe CLI.
-- **Schedule**: Checks for updates and builds automatically every 6 hours.
+| Feature | Details |
+|---|---|
+| **🚀 Unlimited Original Backup** | Lifetime unmetered original-quality cloud storage via Pixel XL spoofing. |
+| **🎨 Unlocked Pixel Editing** | Magic Eraser, Portrait Blur, Sky Replacements, Unblur, Dynamic HDR, and Color Pop. |
+| **👤 Account Avatar Bridge** | Full MicroG profile photo support across Toolbar, Bento, and Switchers with smooth animations. |
+| **📁 Independent DCIM Control** | Custom backup toggles for non-camera media (Screenshots, WhatsApp). |
+| **🛠️ In-App Flag Manager** | Real-time Phenotype flag debugging and UI customization in `Settings > 🛠️ Morphe Flags`. |
+| **🔄 In-App Auto Updater** | Checks for newer patched builds directly inside the app with one-tap download. |
 
-## Download
+## ⚙️ Automated Pipeline
 
-Get the latest APK from [Releases](https://github.com/Akash-Sriram/GooglePhotos-Patched/releases).
+- **Trigger**: Automated GitHub Actions cron runs every **6 hours**.
+- **Source**: Scrapes latest official arm64 APKs directly from APKMirror.
+- **Engine**: Compiles the latest patches from [Akash-Sriram/De-Vanced](https://github.com/Akash-Sriram/De-Vanced) and signs with release keystore.
 
-*Requires [MicroG / GmsCore](https://github.com/ReVanced/GmsCore/releases) for Google account login.*
