@@ -148,9 +148,10 @@ jobs:
           if [ -z "$APK_VER" ]; then
             APK_VER="build-${{ github.run_number }}"
           fi
-          OUT_NAME="GooglePhotos-v${APK_VER}-patched-arm64-v8a.apk"
+          OUT_NAME="GooglePhotos-v${APK_VER}-patched.apk"
           echo "RELEASE_APK_NAME=${OUT_NAME}" >> $GITHUB_ENV
           echo "RELEASE_VERSION=${APK_VER}" >> $GITHUB_ENV
+
 
           # Find zipalign & apksigner
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)

@@ -18,6 +18,7 @@ Pre-built APKs: [GitHub Releases](https://github.com/Akash-Sriram/GooglePhotos-P
 ## ⚙️ Automated Pipeline
 
 - **Trigger**: Automated GitHub Actions cron runs every **6 hours**.
-- **Source**: Scrapes latest official arm64 APKs directly from APKMirror.
+- **Source**: Scrapes latest official universal (nodpi) APKs directly from APKMirror.
 - **Engine**: Compiles the latest patches from [Akash-Sriram/De-Vanced](https://github.com/Akash-Sriram/De-Vanced) and signs with release keystore.
+
 
