@@ -117,10 +117,19 @@ def download_file(url, output_path, extra_headers=None):
 # APKMirror HTML parsing helpers (shared by both paths)
 # ---------------------------------------------------------------------------
 
+def _parse_version_tuple(ver_str):
+    if not ver_str:
+        return (0,)
+    parts = re.findall(r"\d+", ver_str)
+    return tuple(int(p) for p in parts) if parts else (0,)
+
+
 def _find_detail_link(soup):
-    """Return (detail_link, version_str) or (None, None)."""
+    """Return (detail_link, version_str) for the highest semantic version on the page."""
     containers = soup.find_all("div", class_=re.compile(r"list-widget|widget-area|table-row"))
     candidates = containers if containers else [soup]
+    found = []
+    seen_links = set()
     for root in candidates:
         for a in root.find_all("a", href=True):
             href = a["href"]
@@ -128,10 +137,23 @@ def _find_detail_link(soup):
                 href.endswith("-download/") or "android-apk-download" in href
             ):
                 link = urllib.parse.urljoin("https://www.apkmirror.com", href)
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
                 m = re.search(r"google-photos-([0-9\-]+)", href)
                 ver = m.group(1).replace("-", ".").rstrip(".") if m else None
-                return link, ver
-    return None, None
+                if ver:
+                    found.append((link, ver, _parse_version_tuple(ver)))
+
+    if not found:
+        return None, None
+
+    # Sort by semantic version descending so the highest version (e.g. 7.90.0 > 7.89.0) is always chosen
+    found.sort(key=lambda x: x[2], reverse=True)
+    best_link, best_ver, _ = found[0]
+    print(f"[APKMirror] Found {len(found)} releases on page. Picked highest semantic version: {best_ver}")
+    return best_link, best_ver
+
 
 
 def _find_download_page_link(detail_soup):
