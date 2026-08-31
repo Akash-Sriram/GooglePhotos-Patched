@@ -173,14 +173,21 @@ jobs:
           name: ${{ env.RELEASE_APK_NAME }}
           path: ${{ env.RELEASE_APK_NAME }}
 
-      - name: Publish Patched APK Release
+      - name: Publish or Update Patched APK Release
         if: steps.check_release.outputs.skip != 'true' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ env.RELEASE_VERSION }}
-          name: Google Photos v${{ env.RELEASE_VERSION }}
-          draft: false
-          prerelease: false
-          files: |
-            ${{ env.RELEASE_APK_NAME }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ env.RELEASE_VERSION }}"
+          TITLE="Google Photos v${{ env.RELEASE_VERSION }}"
+          APK_FILE="${{ env.RELEASE_APK_NAME }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists. Overwriting APK asset..."
+            gh release upload "$TAG" "$APK_FILE" --clobber
+            gh release edit "$TAG" --title "$TITLE" --latest
+          else
+            echo "Creating new release $TAG..."
+            gh release create "$TAG" "$APK_FILE" --title "$TITLE" --latest
+          fi
+
