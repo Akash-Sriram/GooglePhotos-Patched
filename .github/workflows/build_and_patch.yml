@@ -88,7 +88,7 @@ jobs:
         run: |
           CLI_URL=$(curl -s https://api.github.com/repos/MorpheApp/morphe-desktop/releases/latest | grep "browser_download_url.*morphe-desktop.*all.jar" | cut -d '"' -f 4 | head -n 1)
           if [ -z "$CLI_URL" ]; then
-            CLI_URL="https://github.com/MorpheApp/morphe-desktop/releases/download/v1.11.0/morphe-desktop-1.11.0-all.jar"
+            CLI_URL="https://github.com/MorpheApp/morphe-desktop/releases/download/v1.15.0-dev.4/morphe-desktop-1.15.0-dev.4-all.jar"
           fi
           echo "Downloading Morphe Desktop CLI from $CLI_URL"
           curl -L -o morphe-cli.jar "$CLI_URL"

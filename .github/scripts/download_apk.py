@@ -11,6 +11,7 @@ import os
 import re
 import argparse
 import urllib.parse
+import json
 
 try:
     from curl_cffi import requests as cffi_requests
