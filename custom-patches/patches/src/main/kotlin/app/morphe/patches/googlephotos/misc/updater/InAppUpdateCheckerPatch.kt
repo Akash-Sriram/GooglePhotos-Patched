@@ -13,7 +13,8 @@ val inAppUpdateCheckerPatch = bytecodePatch(
     default = true,
 ) {
     compatibleWith(AppCompatibilities.GOOGLE_PHOTOS)
-    extendWith(sharedExtensionPatch)
+    dependsOn(sharedExtensionPatch)
+
 
     val releaseApiUrl by stringOption(
         key = "releaseApiUrl",
