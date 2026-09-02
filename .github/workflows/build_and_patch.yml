@@ -131,10 +131,11 @@ jobs:
         run: |
           java -jar morphe-cli.jar patch \
             -p "${{ env.PATCH_PATH }}" \
-            -e "Enable in-app update checker" \
             --unsigned \
             -o patched-google-photos-unsigned.apk \
             google-photos-base.apk
+
+
 
       - name: Sign Patched APK
         if: steps.check_release.outputs.skip != 'true'
