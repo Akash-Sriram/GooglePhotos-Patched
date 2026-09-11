@@ -1,6 +1,6 @@
 package app.morphe.patches.googlephotos.misc.updater
 
-import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.stringOption
 import app.morphe.patches.googlephotos.misc.extension.sharedExtensionPatch
@@ -25,7 +25,7 @@ val inAppUpdateCheckerPatch = bytecodePatch(
     )
 
     execute {
-        HomeActivityOnCreateFingerprint.method.addInstruction(
+        HomeActivityOnCreateFingerprint.method.addInstructions(
             0,
             """
                 const-string v0, "$releaseApiUrl"
