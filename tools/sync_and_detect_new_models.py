@@ -124,7 +124,14 @@ def main():
 
     # Pull and translate manifests
     print("[*] Translating MDD manifests for Morphe...")
-    for mf in ["gms_icing_mdd_groups.xml", "gms_icing_mdd_shared_files.xml", "gms_icing_mdd_group_key_properties.xml"]:
+    for mf in [
+        "gms_icing_mdd_groups.xml",
+        "gms_icing_mdd_shared_files.xml",
+        "gms_icing_mdd_group_key_properties.xml",
+        "gms_icing_mdd_shared_file_manager_metadata.xml",
+        "gms_icing_mdd_migrations.xml",
+        "gms_icing_mdd_manager_metadata.xml"
+    ]:
         xml_content = run_su(adb, f"cat {src_prefs}/{mf}")
         if xml_content:
             # Replace package string

@@ -11,7 +11,7 @@ Pre-built APKs: [GitHub Releases](https://github.com/Akash-Sriram/GooglePhotos-P
 | Feature | Details |
 |---|---|
 | **🚀 Unlimited Original Backup** | Lifetime unmetered original-quality cloud storage via Pixel XL spoofing. |
-| **🧠 Auto AI Model Seeder** | In-app background downloader for all 52 TensorFlow Lite models (Magic Eraser, Portrait Blur, Sky) on any device (e.g. Galaxy S24) without root. |
+| **🧠 Auto AI Model Seeder** | In-app background downloader for all 72 TensorFlow Lite models (Magic Eraser, Portrait Blur, Sky, Moods) on any device (e.g. Galaxy S24) without root. |
 | **🎨 Unlocked Pixel Editing** | Magic Eraser, Portrait Blur, Sky Replacements, Dynamic HDR, and Color Pop. |
 | **👤 Account Avatar Bridge** | Full MicroG profile photo support across Toolbar, Bento Menu, and Account Switchers. |
 | **📁 Independent DCIM Control** | Custom backup toggles for non-camera media (Screenshots, WhatsApp). |

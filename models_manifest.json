@@ -1,7 +1,7 @@
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "updated_at": "2026-09-13",
-  "models_count": 52,
+  "models_count": 72,
   "archive_url": "https://github.com/Akash-Sriram/GooglePhotos-Patched/releases/download/v1.0-models/photos_models.zip",
   "min_app_version": "7.0.0",
   "features": {
@@ -20,8 +20,12 @@
     "sky_effects": {
       "version": "v1",
       "models": 4
+    },
+    "moods": {
+      "version": "v1",
+      "models": 20
     }
   },
-  "sha256": "261b04ffdc181cd03e71769567826632a409b596d563c571cb9cd84ed77fb06d",
-  "file_size": 253239803
+  "sha256": "8cd4974d50bfc017b2af9860339a5b6ef7a13c5749d6fb6ac4b90d2196293357",
+  "file_size": 353184537
 }
