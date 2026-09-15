@@ -52,8 +52,6 @@ jobs:
           pip install beautifulsoup4 curl_cffi playwright
           playwright install chromium --with-deps
 
-      - name: Setup Android SDK Tools
-        uses: android-actions/setup-android@v3
 
       - name: Cache Gradle
         uses: burrunan/gradle-cache-action@v3
