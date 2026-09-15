@@ -112,21 +112,21 @@ public class GitHubReleaseChecker {
         String[] latestParts = latest.split("\\.");
         String[] currentParts = current.split("\\.");
 
-        int compareLen = Math.min(3, Math.min(latestParts.length, currentParts.length));
-        for (int i = 0; i < compareLen; i++) {
-            int l = parseSafeInt(latestParts[i]);
-            int c = parseSafeInt(currentParts[i]);
+        int maxLen = Math.max(latestParts.length, currentParts.length);
+        for (int i = 0; i < maxLen; i++) {
+            long l = i < latestParts.length ? parseSafeLong(latestParts[i]) : 0L;
+            long c = i < currentParts.length ? parseSafeLong(currentParts[i]) : 0L;
             if (l > c) return true;
             if (l < c) return false;
         }
         return false;
     }
 
-    private static int parseSafeInt(String str) {
+    private static long parseSafeLong(String str) {
         try {
-            return Integer.parseInt(str);
+            return Long.parseLong(str.trim());
         } catch (NumberFormatException e) {
-            return 0;
+            return 0L;
         }
     }
 
