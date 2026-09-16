@@ -23,10 +23,16 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
 
 public class GitHubReleaseChecker {
 
     private static final String REPO_RELEASES_URL = "https://api.github.com/repos/Akash-Sriram/GooglePhotos-Patched/releases/latest";
+    private static final String PREFS_NAME = "google_photos_updater_prefs";
+    private static final String KEY_IGNORED_ASSET_TIME = "ignored_asset_time";
     private static boolean hasCheckedThisSession = false;
 
     public static void checkUpdateOnStartup(final Context context) {
@@ -71,6 +77,7 @@ public class GitHubReleaseChecker {
                     final String latestVersion = tagName.replaceAll("[^0-9.]", "").replaceAll("^\\.|\\.$", "");
 
                     String downloadUrl = null;
+                    String assetUpdatedAtStr = null;
                     JSONArray assets = releaseJson.optJSONArray("assets");
                     if (assets != null) {
                         for (int i = 0; i < assets.length(); i++) {
@@ -78,6 +85,7 @@ public class GitHubReleaseChecker {
                             String name = asset.optString("name", "");
                             if (name.endsWith(".apk")) {
                                 downloadUrl = asset.optString("browser_download_url", null);
+                                assetUpdatedAtStr = asset.optString("updated_at", asset.optString("created_at", ""));
                                 break;
                             }
                         }
@@ -90,13 +98,34 @@ public class GitHubReleaseChecker {
                     PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
                     String currentVersion = pInfo.versionName.replaceAll("[^0-9.]", "").replaceAll("^\\.|\\.$", "");
 
-                    if (isNewerVersion(latestVersion, currentVersion)) {
+                    long assetUpdatedAtMillis = parseIso8601(assetUpdatedAtStr);
+                    if (assetUpdatedAtMillis <= 0) {
+                        assetUpdatedAtMillis = parseIso8601(releaseJson.optString("published_at", ""));
+                    }
+
+                    boolean isNewerVer = isNewerVersion(latestVersion, currentVersion);
+                    boolean isSameVer = !latestVersion.isEmpty() && latestVersion.equals(currentVersion);
+
+                    // Check if remote asset was updated after current installed package was updated
+                    // Add 60-second grace threshold to avoid edge-timing on install
+                    boolean isNewerBuild = false;
+                    if (isSameVer && assetUpdatedAtMillis > 0) {
+                        long ignoredTime = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                .getLong(KEY_IGNORED_ASSET_TIME, 0);
+                        if (assetUpdatedAtMillis > (pInfo.lastUpdateTime + 60000L) && assetUpdatedAtMillis > ignoredTime) {
+                            isNewerBuild = true;
+                        }
+                    }
+
+                    if (isNewerVer || isNewerBuild) {
                         final String finalDownloadUrl = downloadUrl;
                         final String finalCurrentVersion = currentVersion;
+                        final boolean finalIsRebuild = isNewerBuild && !isNewerVer;
+                        final long finalAssetTime = assetUpdatedAtMillis;
                         new Handler(Looper.getMainLooper()).post(new Runnable() {
                             @Override
                             public void run() {
-                                showUpdateDialog(context, latestVersion, finalDownloadUrl, finalCurrentVersion);
+                                showUpdateDialog(context, latestVersion, finalDownloadUrl, finalCurrentVersion, finalIsRebuild, finalAssetTime);
                             }
                         });
                     }
@@ -105,6 +134,25 @@ public class GitHubReleaseChecker {
                 }
             }
         }).start();
+    }
+
+    private static long parseIso8601(String isoString) {
+        if (isoString == null || isoString.isEmpty()) return 0;
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = sdf.parse(isoString);
+            return date != null ? date.getTime() : 0;
+        } catch (Exception ignored) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
+                sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date date = sdf.parse(isoString);
+                return date != null ? date.getTime() : 0;
+            } catch (Exception e) {
+                return 0;
+            }
+        }
     }
 
     private static boolean isNewerVersion(String latest, String current) {
@@ -143,19 +191,37 @@ public class GitHubReleaseChecker {
         }
     }
 
-    private static void showUpdateDialog(final Context context, final String newVersion, final String downloadUrl, final String currentVersion) {
+    private static void showUpdateDialog(final Context context, final String newVersion, final String downloadUrl,
+                                         final String currentVersion, final boolean isRebuild, final long assetTime) {
         if (!(context instanceof Activity) || ((Activity) context).isFinishing()) {
             return;
         }
 
+        String message;
+        if (isRebuild) {
+            message = "An updated build of Google Photos (v" + newVersion + ") with fixes/improvements is available.\n\n" +
+                      "Would you like to download and install this latest build?";
+        } else {
+            message = "A new patched version of Google Photos is available.\n\n" +
+                      "Installed version: " + currentVersion + "\n" +
+                      "Latest version: " + newVersion + "\n\n" +
+                      "Would you like to download and install it?";
+        }
+
         new AlertDialog.Builder(context, getDialogTheme(context))
-                .setTitle("Update Available")
-                .setMessage("A new patched version of Google Photos is available.\n\n" +
-                            "Installed version: " + currentVersion + "\n" +
-                            "Latest version: " + newVersion + "\n\n" +
-                            "Would you like to download and install it?")
+                .setTitle(isRebuild ? "Build Update Available" : "Update Available")
+                .setMessage(message)
                 .setPositiveButton("Update", (dialog, which) -> downloadAndInstallApk(context, newVersion, downloadUrl))
-                .setNegativeButton("Later", null)
+                .setNegativeButton("Later", (dialog, which) -> {
+                    if (isRebuild && assetTime > 0) {
+                        try {
+                            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putLong(KEY_IGNORED_ASSET_TIME, assetTime)
+                                    .apply();
+                        } catch (Exception ignored) {}
+                    }
+                })
                 .setCancelable(true)
                 .show();
     }
