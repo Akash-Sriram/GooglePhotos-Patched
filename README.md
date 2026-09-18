@@ -1,6 +1,6 @@
 # Google Photos Patched
 
-Automated builds of Google Photos patched with [De-Vanced](https://github.com/Akash-Sriram/De-Vanced).  
+Automated builds of Google Photos patched with [Morphe Google Photos](https://github.com/Akash-Sriram/morphe-google-photos).  
 Pre-built APKs: [GitHub Releases](https://github.com/Akash-Sriram/GooglePhotos-Patched/releases/latest)  
 *Requires [MicroG-RE](https://github.com/MorpheApp/MicroG-RE) or GmsCore for non-root Google account login.*
 
@@ -22,5 +22,5 @@ Pre-built APKs: [GitHub Releases](https://github.com/Akash-Sriram/GooglePhotos-P
 
 ## ⚙️ Automated Pipeline
 
-- **Automatic Trigger**: Builds every 6 hours via GitHub Actions and instantly whenever a new release is published in [De-Vanced](https://github.com/Akash-Sriram/De-Vanced).
+- **Automatic Trigger**: Builds every 6 hours via GitHub Actions and instantly whenever a new release is published in [Morphe Google Photos](https://github.com/Akash-Sriram/morphe-google-photos).
 - **Source**: Scrapes and patches the latest official universal (nodpi) Google Photos releases from APKMirror.

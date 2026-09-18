@@ -29,11 +29,11 @@ jobs:
       - name: Checkout Release Repository
         uses: actions/checkout@v4
 
-      - name: Checkout Patches Repository (De-Vanced)
+      - name: Checkout Patches Repository (Morphe Google Photos)
         uses: actions/checkout@v4
         with:
-          repository: 'Akash-Sriram/De-Vanced'
-          path: 'De-Vanced'
+          repository: 'Akash-Sriram/morphe-google-photos'
+          path: 'morphe-google-photos'
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -56,27 +56,27 @@ jobs:
       - name: Cache Gradle
         uses: burrunan/gradle-cache-action@v3
         with:
-          build-root-directory: De-Vanced
+          build-root-directory: morphe-google-photos
 
-      - name: Overlay Custom Patches from GooglePhotos-Patched into De-Vanced
+      - name: Overlay Custom Patches from GooglePhotos-Patched into morphe-google-photos
         run: |
           if [ -d "custom-patches" ]; then
-            echo "Copying custom-patches into De-Vanced..."
-            cp -r custom-patches/* De-Vanced/
+            echo "Copying custom-patches into morphe-google-photos..."
+            cp -r custom-patches/* morphe-google-photos/
           fi
 
-      - name: Build Morphe Patches from De-Vanced
+      - name: Build Morphe Patches from morphe-google-photos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd De-Vanced
+          cd morphe-google-photos
           chmod +x gradlew
           ./gradlew :patches:buildAndroid generatePatchesList -Pgpr.user=${{ github.actor }} -Pgpr.key=${{ secrets.GITHUB_TOKEN }}
 
       - name: Locate Patch Bundle
         id: locate_patch
         run: |
-          PATCH_FILE=$(find De-Vanced/patches/build/libs \( -name "patches-*.mpp" -o -name "patches-*.jar" \) | grep -v "\-sources" | grep -v "\-javadoc" | head -n 1)
+          PATCH_FILE=$(find morphe-google-photos/patches/build/libs \( -name "patches-*.mpp" -o -name "patches-*.jar" \) | grep -v "\-sources" | grep -v "\-javadoc" | head -n 1)
           if [ -z "$PATCH_FILE" ]; then
             echo "Error: Patch file not found!"
             exit 1
