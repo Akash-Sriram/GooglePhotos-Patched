@@ -71,7 +71,7 @@ jobs:
         run: |
           cd morphe-google-photos
           chmod +x gradlew
-          ./gradlew :patches:buildAndroid generatePatchesList -Pgpr.user=${{ github.actor }} -Pgpr.key=${{ secrets.GITHUB_TOKEN }}
+          ./gradlew :extensions:shared:syncExtension :patches:buildAndroid generatePatchesList -Pgpr.user=${{ github.actor }} -Pgpr.key=${{ secrets.GITHUB_TOKEN }}
 
       - name: Locate Patch Bundle
         id: locate_patch
@@ -88,7 +88,7 @@ jobs:
         run: |
           CLI_URL=$(curl -s https://api.github.com/repos/MorpheApp/morphe-desktop/releases/latest | grep "browser_download_url.*morphe-desktop.*all.jar" | cut -d '"' -f 4 | head -n 1)
           if [ -z "$CLI_URL" ]; then
-            CLI_URL="https://github.com/MorpheApp/morphe-desktop/releases/download/v1.15.0-dev.4/morphe-desktop-1.15.0-dev.4-all.jar"
+            CLI_URL="https://github.com/MorpheApp/morphe-desktop/releases/download/v1.16.0/morphe-desktop-1.16.0-all.jar"
           fi
           echo "Downloading Morphe Desktop CLI from $CLI_URL"
           curl -L -o morphe-cli.jar "$CLI_URL"
@@ -126,18 +126,27 @@ jobs:
             fi
           fi
 
-      - name: Patch Google Photos APK using Morphe CLI
+      - name: Patch Google Photos APKs (Mod & Original)
         if: steps.check_release.outputs.skip != 'true'
         run: |
+          echo "🧩 [1/2] Building Mod Package (app.morphe.android.apps.photos)..."
           java -jar morphe-cli.jar patch \
             -p "${{ env.PATCH_PATH }}" \
+            -d "Disable Play Store updates" \
             --unsigned \
-            -o patched-google-photos-unsigned.apk \
+            -o patched-mod-unsigned.apk \
             google-photos-base.apk
 
+          echo "🧩 [2/2] Building Original Package (com.google.android.apps.photos)..."
+          java -jar morphe-cli.jar patch \
+            -p "${{ env.PATCH_PATH }}" \
+            -d "Change package name" \
+            -e "Disable Play Store updates" \
+            --unsigned \
+            -o patched-original-unsigned.apk \
+            google-photos-base.apk
 
-
-      - name: Sign Patched APK
+      - name: Sign Patched APKs
         if: steps.check_release.outputs.skip != 'true'
         run: |
           # Decode keystore from secret
@@ -149,31 +158,43 @@ jobs:
           if [ -z "$APK_VER" ]; then
             APK_VER="build-${{ github.run_number }}"
           fi
-          OUT_NAME="GooglePhotos-v${APK_VER}-patched.apk"
-          echo "RELEASE_APK_NAME=${OUT_NAME}" >> $GITHUB_ENV
+          OUT_MOD="GooglePhotos-v${APK_VER}-mod.apk"
+          OUT_ORIGINAL="GooglePhotos-v${APK_VER}-original.apk"
+          echo "RELEASE_APK_MOD=${OUT_MOD}" >> $GITHUB_ENV
+          echo "RELEASE_APK_ORIGINAL=${OUT_ORIGINAL}" >> $GITHUB_ENV
           echo "RELEASE_VERSION=${APK_VER}" >> $GITHUB_ENV
-
 
           # Find zipalign & apksigner
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
-          $BUILD_TOOLS_DIR/zipalign -v 4 patched-google-photos-unsigned.apk patched-google-photos-aligned.apk
 
-          # Repack aligned APK to fix local file header / central directory zip mismatches (e.g. assets/AltFormats_27)
-          python -c "import zipfile; in_zip = zipfile.ZipFile('patched-google-photos-aligned.apk', 'r'); out_zip = zipfile.ZipFile('patched-google-photos-aligned-fixed.apk', 'w', compression=zipfile.ZIP_DEFLATED); [out_zip.writestr(item, in_zip.read(item.filename)) for item in in_zip.infolist()]; in_zip.close(); out_zip.close()"
-          mv patched-google-photos-aligned-fixed.apk patched-google-photos-aligned.apk
+          for FLAVOR in mod original; do
+            echo "Processing and signing ${FLAVOR} package..."
+            $BUILD_TOOLS_DIR/zipalign -v 4 patched-${FLAVOR}-unsigned.apk patched-${FLAVOR}-aligned.apk
 
-          # Sign the repacked, zip-aligned APK
-          $BUILD_TOOLS_DIR/apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "${OUT_NAME}" patched-google-photos-aligned.apk
+            # Repack aligned APK to fix local file header / central directory zip mismatches (e.g. assets/AltFormats_27)
+            python -c "import zipfile; in_zip = zipfile.ZipFile('patched-${FLAVOR}-aligned.apk', 'r'); out_zip = zipfile.ZipFile('patched-${FLAVOR}-aligned-fixed.apk', 'w', compression=zipfile.ZIP_DEFLATED); [out_zip.writestr(item, in_zip.read(item.filename)) for item in in_zip.infolist()]; in_zip.close(); out_zip.close()"
+            mv patched-${FLAVOR}-aligned-fixed.apk patched-${FLAVOR}-aligned.apk
+
+            TARGET_OUT=$([ "$FLAVOR" = "mod" ] && echo "$OUT_MOD" || echo "$OUT_ORIGINAL")
+            $BUILD_TOOLS_DIR/apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "${TARGET_OUT}" patched-${FLAVOR}-aligned.apk
+          done
           
           # Clean up decrypted keystore
           rm -f release.keystore
 
-      - name: Upload Artifact
+      - name: Upload Mod APK Artifact
         if: steps.check_release.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.RELEASE_APK_NAME }}
-          path: ${{ env.RELEASE_APK_NAME }}
+          name: ${{ env.RELEASE_APK_MOD }}
+          path: ${{ env.RELEASE_APK_MOD }}
+
+      - name: Upload Original APK Artifact
+        if: steps.check_release.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RELEASE_APK_ORIGINAL }}
+          path: ${{ env.RELEASE_APK_ORIGINAL }}
 
       - name: Publish or Update Patched APK Release
         if: steps.check_release.outputs.skip != 'true' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
@@ -182,14 +203,15 @@ jobs:
         run: |
           TAG="v${{ env.RELEASE_VERSION }}"
           TITLE="Google Photos v${{ env.RELEASE_VERSION }}"
-          APK_FILE="${{ env.RELEASE_APK_NAME }}"
+          APK_MOD="${{ env.RELEASE_APK_MOD }}"
+          APK_ORIGINAL="${{ env.RELEASE_APK_ORIGINAL }}"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG exists. Overwriting APK asset..."
-            gh release upload "$TAG" "$APK_FILE" --clobber
+            echo "Release $TAG exists. Overwriting APK assets..."
+            gh release upload "$TAG" "$APK_MOD" "$APK_ORIGINAL" --clobber
             gh release edit "$TAG" --title "$TITLE" --latest
           else
             echo "Creating new release $TAG..."
-            gh release create "$TAG" "$APK_FILE" --title "$TITLE" --latest
+            gh release create "$TAG" "$APK_MOD" "$APK_ORIGINAL" --title "$TITLE" --latest
           fi
 

@@ -76,17 +76,35 @@ public class GitHubReleaseChecker {
                     String tagName = releaseJson.optString("tag_name", "");
                     final String latestVersion = tagName.replaceAll("[^0-9.]", "").replaceAll("^\\.|\\.$", "");
 
+                    String currentPackageName = context.getPackageName();
+                    boolean isModPackage = currentPackageName != null && currentPackageName.startsWith("app.morphe");
+                    String targetFlavor = isModPackage ? "-mod" : "-original";
+
                     String downloadUrl = null;
                     String assetUpdatedAtStr = null;
                     JSONArray assets = releaseJson.optJSONArray("assets");
                     if (assets != null) {
+                        // 1. Prioritize matching the exact flavor of the currently installed app
                         for (int i = 0; i < assets.length(); i++) {
                             JSONObject asset = assets.getJSONObject(i);
                             String name = asset.optString("name", "");
-                            if (name.endsWith(".apk")) {
+                            if (name.endsWith(".apk") && name.toLowerCase().contains(targetFlavor)) {
                                 downloadUrl = asset.optString("browser_download_url", null);
                                 assetUpdatedAtStr = asset.optString("updated_at", asset.optString("created_at", ""));
                                 break;
+                            }
+                        }
+
+                        // 2. Backward-compatibility fallback (if release only has single legacy asset)
+                        if (downloadUrl == null) {
+                            for (int i = 0; i < assets.length(); i++) {
+                                JSONObject asset = assets.getJSONObject(i);
+                                String name = asset.optString("name", "");
+                                if (name.endsWith(".apk")) {
+                                    downloadUrl = asset.optString("browser_download_url", null);
+                                    assetUpdatedAtStr = asset.optString("updated_at", asset.optString("created_at", ""));
+                                    break;
+                                }
                             }
                         }
                     }
@@ -387,7 +405,7 @@ public class GitHubReleaseChecker {
                 java.io.File[] files = downloadDir.listFiles();
                 if (files != null) {
                     for (java.io.File file : files) {
-                        if (file.isFile() && file.getName().startsWith("GooglePhotos-") && file.getName().endsWith("-patched.apk")) {
+                        if (file.isFile() && file.getName().startsWith("GooglePhotos-") && file.getName().endsWith(".apk")) {
                             file.delete();
                         }
                     }
