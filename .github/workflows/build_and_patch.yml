@@ -14,8 +14,6 @@ on:
       - main
     paths-ignore:
       - '**.md'
-      - 'models_manifest.json'
-      - 'tools/**'
 
 jobs:
   build-and-patch:
