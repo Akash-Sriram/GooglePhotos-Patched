@@ -627,9 +627,13 @@ fun gmsCoreSupportResourcePatch(
                     setAttribute("android:value", "$GMS_CORE_VENDOR_GROUP_ID.android.gms")
                 }
 
-                // Add REQUEST_INSTALL_PACKAGES permission for in-app updates (not needed for Google Photos)
-                if (fromPackageName != "com.google.android.apps.photos") {
-                    val manifestNode = document.getElementsByTagName("manifest").item(0)
+                // Add REQUEST_INSTALL_PACKAGES permission for in-app updates
+                val manifestNode = document.getElementsByTagName("manifest").item(0)
+                val existingPermissions = document.getElementsByTagName("uses-permission")
+                val alreadyAdded = (0 until existingPermissions.length).any { i ->
+                    (existingPermissions.item(i) as? Element)?.getAttribute("android:name") == "android.permission.REQUEST_INSTALL_PACKAGES"
+                }
+                if (!alreadyAdded) {
                     val permissionNode = document.createElement("uses-permission")
                     permissionNode.setAttribute("android:name", "android.permission.REQUEST_INSTALL_PACKAGES")
                     manifestNode.appendChild(permissionNode)

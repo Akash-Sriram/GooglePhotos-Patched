@@ -479,7 +479,14 @@ public class GitHubReleaseChecker {
     private static void installApk(Context context, Uri apkUri) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!context.getPackageManager().canRequestPackageInstalls()) {
+                boolean canInstall = false;
+                try {
+                    canInstall = context.getPackageManager().canRequestPackageInstalls();
+                } catch (SecurityException se) {
+                    Logger.printException(() -> "Missing REQUEST_INSTALL_PACKAGES permission or check failed", se);
+                    canInstall = false;
+                }
+                if (!canInstall) {
                     new AlertDialog.Builder(context, getDialogTheme(context))
                             .setTitle("Permission Required")
                             .setMessage("Google Photos requires permission to install updates.\n\nPlease allow 'Install unknown apps' in the next screen, then tap Update again.")
