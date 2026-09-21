@@ -130,7 +130,6 @@ jobs:
           echo "🧩 [1/2] Building Mod Package (app.morphe.android.apps.photos)..."
           java -jar morphe-cli.jar patch \
             -p "${{ env.PATCH_PATH }}" \
-            -d "Disable Play Store updates" \
             --unsigned \
             -o patched-mod-unsigned.apk \
             google-photos-base.apk
@@ -138,7 +137,7 @@ jobs:
           echo "🧩 [2/2] Building Original Package (com.google.android.apps.photos)..."
           java -jar morphe-cli.jar patch \
             -p "${{ env.PATCH_PATH }}" \
-            -d "Change package name" \
+            -e "Change to official package name" \
             -e "Disable Play Store updates" \
             --unsigned \
             -o patched-original-unsigned.apk \
