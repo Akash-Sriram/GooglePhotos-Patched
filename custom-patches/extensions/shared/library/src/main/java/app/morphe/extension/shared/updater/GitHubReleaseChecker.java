@@ -33,6 +33,7 @@ public class GitHubReleaseChecker {
 
     private static final String REPO_RELEASES_URL = "https://api.github.com/repos/Akash-Sriram/GooglePhotos-Patched/releases/latest";
     private static final String PREFS_NAME = "google_photos_updater_prefs";
+    private static final String KEY_HANDLED_ASSET_TIME = "handled_asset_time";
     private static final String KEY_IGNORED_ASSET_TIME = "ignored_asset_time";
     private static boolean hasCheckedThisSession = false;
 
@@ -129,9 +130,13 @@ public class GitHubReleaseChecker {
                     // Add 60-second grace threshold to avoid edge-timing on install
                     boolean isNewerBuild = false;
                     if (isSameVer && assetUpdatedAtMillis > 0) {
-                        long ignoredTime = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                .getLong(KEY_IGNORED_ASSET_TIME, 0);
-                        if (assetUpdatedAtMillis > (pInfo.lastUpdateTime + 60000L) && assetUpdatedAtMillis > ignoredTime) {
+                        long handledTime = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                .getLong(KEY_HANDLED_ASSET_TIME, 0);
+                        if (handledTime <= 0) {
+                            handledTime = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                    .getLong(KEY_IGNORED_ASSET_TIME, 0);
+                        }
+                        if (assetUpdatedAtMillis > handledTime && assetUpdatedAtMillis > (pInfo.lastUpdateTime + 60000L)) {
                             isNewerBuild = true;
                         }
                     }
@@ -210,6 +215,17 @@ public class GitHubReleaseChecker {
         }
     }
 
+    private static void recordHandledAssetTime(Context context, long assetTime) {
+        if (context == null || assetTime <= 0) return;
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putLong(KEY_HANDLED_ASSET_TIME, assetTime)
+                    .putLong(KEY_IGNORED_ASSET_TIME, assetTime)
+                    .apply();
+        } catch (Exception ignored) {}
+    }
+
     private static void showUpdateDialog(final Context context, final String newVersion, final String downloadUrl,
                                          final String currentVersion, final boolean isRebuild, final long assetTime) {
         if (!(context instanceof Activity) || ((Activity) context).isFinishing()) {
@@ -230,16 +246,15 @@ public class GitHubReleaseChecker {
         new AlertDialog.Builder(context, getDialogTheme(context))
                 .setTitle(isRebuild ? "Build Update Available" : "Update Available")
                 .setMessage(message)
-                .setPositiveButton("Update", (dialog, which) -> downloadAndInstallApk(context, newVersion, downloadUrl))
+                .setPositiveButton("Update", (dialog, which) -> {
+                    recordHandledAssetTime(context, assetTime);
+                    downloadAndInstallApk(context, newVersion, downloadUrl);
+                })
                 .setNegativeButton("Later", (dialog, which) -> {
-                    if (isRebuild && assetTime > 0) {
-                        try {
-                            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                    .edit()
-                                    .putLong(KEY_IGNORED_ASSET_TIME, assetTime)
-                                    .apply();
-                        } catch (Exception ignored) {}
-                    }
+                    recordHandledAssetTime(context, assetTime);
+                })
+                .setOnCancelListener(dialog -> {
+                    recordHandledAssetTime(context, assetTime);
                 })
                 .setCancelable(true)
                 .show();
