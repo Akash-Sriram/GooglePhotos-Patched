@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 
 import app.morphe.extension.shared.Logger;
 
@@ -250,11 +251,24 @@ public class GitHubReleaseChecker {
         }
 
         try {
+            final String apkFileName = "GooglePhotos-v" + version + "-patched.apk";
+
+            // Pre-clean previous download with same name if accessible
+            try {
+                java.io.File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (downloadDir != null && downloadDir.exists()) {
+                    java.io.File existingApk = new java.io.File(downloadDir, apkFileName);
+                    if (existingApk.exists()) {
+                        existingApk.delete();
+                    }
+                }
+            } catch (Exception ignored) {}
+
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(downloadUrl));
             request.setTitle("Google Photos Update (v" + version + ")");
             request.setDescription("Downloading updated patched Google Photos build...");
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
-            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "GooglePhotos-v" + version + "-patched.apk");
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, apkFileName);
 
             final DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
             if (manager == null) return;
@@ -269,7 +283,7 @@ public class GitHubReleaseChecker {
             layout.setPadding(padding, padding, padding, padding);
 
             final android.widget.TextView progressText = new android.widget.TextView(context);
-            progressText.setText("Preparing download...");
+            progressText.setText("Connecting to server...");
             progressText.setTextSize(16);
             
             // Set text color to match the theme
@@ -318,27 +332,42 @@ public class GitHubReleaseChecker {
                             int bytesDownloadedCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
                             int bytesTotalCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
                             int statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                            int reasonCol = cursor.getColumnIndex(DownloadManager.COLUMN_REASON);
 
                             if (bytesDownloadedCol != -1 && bytesTotalCol != -1 && statusCol != -1) {
                                 final int bytesDownloaded = cursor.getInt(bytesDownloadedCol);
                                 final int bytesTotal = cursor.getInt(bytesTotalCol);
                                 final int status = cursor.getInt(statusCol);
+                                final int reason = (reasonCol != -1) ? cursor.getInt(reasonCol) : -1;
 
                                 mainHandler.post(new Runnable() {
                                     @Override
                                     public void run() {
                                         if (status == DownloadManager.STATUS_RUNNING) {
-                                            progressBar.setIndeterminate(false);
                                             if (bytesTotal > 0) {
+                                                progressBar.setIndeterminate(false);
                                                 int progress = (int) ((bytesDownloaded * 100L) / bytesTotal);
-                                                progressBar.setProgress(progress);
-                                                progressText.setText("Downloading: " + progress + "% (" 
-                                                    + (bytesDownloaded / 1024 / 1024) + "MB / " 
-                                                    + (bytesTotal / 1024 / 1024) + "MB)");
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                                    progressBar.setProgress(progress, true);
+                                                } else {
+                                                    progressBar.setProgress(progress);
+                                                }
+                                                progressText.setText(String.format(Locale.US, "Downloading: %d%% (%.1f MB / %.1f MB)",
+                                                        progress, bytesDownloaded / (1024.0 * 1024.0), bytesTotal / (1024.0 * 1024.0)));
                                             } else {
                                                 progressBar.setIndeterminate(true);
-                                                progressText.setText("Downloading...");
+                                                if (bytesDownloaded > 0) {
+                                                    progressText.setText(String.format(Locale.US, "Downloading: %.1f MB",
+                                                            bytesDownloaded / (1024.0 * 1024.0)));
+                                                } else {
+                                                    progressText.setText("Downloading...");
+                                                }
                                             }
+                                        } else if (status == DownloadManager.STATUS_PENDING) {
+                                            progressBar.setIndeterminate(true);
+                                            progressText.setText("Connecting to server...");
+                                        } else if (status == DownloadManager.STATUS_PAUSED) {
+                                            progressText.setText("Download paused. Reconnecting...");
                                         }
                                     }
                                 });
@@ -348,26 +377,47 @@ public class GitHubReleaseChecker {
                                     mainHandler.post(new Runnable() {
                                         @Override
                                         public void run() {
-                                            try {
-                                                downloadDialog.dismiss();
-                                            } catch (Exception ignored) {}
+                                            progressBar.setIndeterminate(true);
+                                            progressText.setText("Download complete! Launching package installer...");
+
                                             Uri apkUri = manager.getUriForDownloadedFile(downloadId);
                                             if (apkUri != null) {
                                                 installApk(context, apkUri);
+                                            } else {
+                                                try {
+                                                    downloadDialog.dismiss();
+                                                } catch (Exception ignored) {}
+                                                new AlertDialog.Builder(context, getDialogTheme(context))
+                                                        .setTitle("Installation Error")
+                                                        .setMessage("Unable to locate downloaded APK file.")
+                                                        .setPositiveButton("OK", null)
+                                                        .show();
+                                                return;
                                             }
+
+                                            // Keep dialog showing status for 2.5s while Android package installer initializes
+                                            mainHandler.postDelayed(new Runnable() {
+                                                @Override
+                                                public void run() {
+                                                    try {
+                                                        downloadDialog.dismiss();
+                                                    } catch (Exception ignored) {}
+                                                }
+                                            }, 2500);
                                         }
                                     });
                                 } else if (status == DownloadManager.STATUS_FAILED) {
                                     downloading = false;
+                                    final String failureReason = getDownloadFailureReason(reason);
                                     mainHandler.post(new Runnable() {
                                         @Override
                                         public void run() {
                                             try {
                                                 downloadDialog.dismiss();
                                             } catch (Exception ignored) {}
-                                            new AlertDialog.Builder(context)
+                                            new AlertDialog.Builder(context, getDialogTheme(context))
                                                     .setTitle("Download Failed")
-                                                    .setMessage("Failed to download the update APK. Please try again later.")
+                                                    .setMessage("Failed to download the update APK.\n\nReason: " + failureReason)
                                                     .setPositiveButton("OK", null)
                                                     .show();
                                         }
@@ -387,14 +437,68 @@ public class GitHubReleaseChecker {
         }
     }
 
+    private static String getDownloadFailureReason(int reason) {
+        switch (reason) {
+            case DownloadManager.ERROR_CANNOT_RESUME:
+                return "Download cannot be resumed.";
+            case DownloadManager.ERROR_DEVICE_NOT_FOUND:
+                return "Storage device not found.";
+            case DownloadManager.ERROR_FILE_ALREADY_EXISTS:
+                return "File already exists.";
+            case DownloadManager.ERROR_FILE_ERROR:
+                return "Storage file error.";
+            case DownloadManager.ERROR_HTTP_DATA_ERROR:
+                return "HTTP data transfer error.";
+            case DownloadManager.ERROR_INSUFFICIENT_SPACE:
+                return "Insufficient storage space.";
+            case DownloadManager.ERROR_TOO_MANY_REDIRECTS:
+                return "Too many server redirects.";
+            case DownloadManager.ERROR_UNHANDLED_HTTP_CODE:
+                return "Unhandled HTTP error.";
+            case DownloadManager.ERROR_UNKNOWN:
+            default:
+                return (reason > 0) ? ("HTTP Error code: " + reason) : "Unknown network or storage error.";
+        }
+    }
+
     private static void installApk(Context context, Uri apkUri) {
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.getPackageManager().canRequestPackageInstalls()) {
+                    new AlertDialog.Builder(context, getDialogTheme(context))
+                            .setTitle("Permission Required")
+                            .setMessage("Google Photos requires permission to install updates.\n\nPlease allow 'Install unknown apps' in the next screen, then tap Update again.")
+                            .setPositiveButton("Settings", (dialog, which) -> {
+                                try {
+                                    Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                                    settingsIntent.setData(Uri.parse("package:" + context.getPackageName()));
+                                    settingsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    context.startActivity(settingsIntent);
+                                } catch (Exception ex) {
+                                    Intent genericIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                                    genericIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    context.startActivity(genericIntent);
+                                }
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                    return;
+                }
+            }
+
             Intent installIntent = new Intent(Intent.ACTION_VIEW);
             installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
             installIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             context.startActivity(installIntent);
         } catch (Exception e) {
             Logger.printException(() -> "Error triggering package installer", e);
+            try {
+                new AlertDialog.Builder(context, getDialogTheme(context))
+                        .setTitle("Installation Failed")
+                        .setMessage("Could not start package installer: " + e.getMessage())
+                        .setPositiveButton("OK", null)
+                        .show();
+            } catch (Exception ignored) {}
         }
     }
 
