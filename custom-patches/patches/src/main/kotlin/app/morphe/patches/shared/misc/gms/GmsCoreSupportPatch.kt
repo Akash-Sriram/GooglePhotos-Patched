@@ -649,7 +649,7 @@ fun gmsCoreSupportResourcePatch(
 
             val transformations = mutableMapOf(
                 "com.google.android.c2dm" to "$GMS_CORE_VENDOR_GROUP_ID.android.c2dm",
-                "com.google.android.libraries.photos.api.mars" to "$GMS_CORE_VENDOR_GROUP_ID.android.apps.photos.api.mars",
+                "com.google.android.libraries.photos.api.mars" to "$packageName.api.mars",
                 "</queries>" to "<package android:name=\"$GMS_CORE_VENDOR_GROUP_ID.android.gms\"/></queries>",
             )
 

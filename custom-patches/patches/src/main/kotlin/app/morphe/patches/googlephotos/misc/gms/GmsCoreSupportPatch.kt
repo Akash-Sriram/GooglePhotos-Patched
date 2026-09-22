@@ -103,6 +103,10 @@ val gmsCoreSupportPatch = gmsCoreSupportPatch(
                 "$PHOTOS_PACKAGE_NAME.mars.",
                 "content://$PHOTOS_PACKAGE_NAME.mars.",
             )
+            val marsLibPrefixes = listOf(
+                "com.google.android.libraries.photos.api.mars",
+                "content://com.google.android.libraries.photos.api.mars",
+            )
             classDefForEach { classDef ->
                 val mutableClass by lazy { mutableClassDefBy(classDef) }
 
@@ -118,10 +122,13 @@ val gmsCoreSupportPatch = gmsCoreSupportPatch(
                                 ?: return@forEachIndexed
 
                         val original = stringRef.string
-                        val transformed = marsPackagePrefixes
-                            .firstOrNull { original.startsWith(it) }
-                            ?.let { original.replace(PHOTOS_PACKAGE_NAME, targetPackageName) }
-                            ?: return@forEachIndexed
+                        val transformed = when {
+                            marsLibPrefixes.any { original.startsWith(it) } ->
+                                original.replace("com.google.android.libraries.photos.api.mars", "$targetPackageName.api.mars")
+                            marsPackagePrefixes.any { original.startsWith(it) } ->
+                                original.replace(PHOTOS_PACKAGE_NAME, targetPackageName)
+                            else -> null
+                        } ?: return@forEachIndexed
 
                         mutableMethod.replaceInstruction(
                             index,
@@ -170,6 +177,12 @@ val gmsCoreSupportPatch = gmsCoreSupportPatch(
                 "return-void",
             )
         }
+
+        // 6) Hook CurrentLocationMixin.ar(View, Bundle) to eagerly wire location source to map on view creation.
+        CurrentLocationMixinOnViewCreatedFingerprint.method.addInstruction(
+            0,
+            "invoke-static {p0}, Lapp/morphe/extension/shared/patches/GmsCoreSupportPatch;->initMapLocation(Ljava/lang/Object;)V",
+        )
     },
 ) {
     compatibleWith(AppCompatibilities.GOOGLE_PHOTOS)
@@ -221,8 +234,11 @@ private fun gmsCoreSupportResourcePatch() =
                     for (node in providers) {
                         val provider = node as Element
                         val authorities = provider.getAttribute("android:authorities")
-                        if (!authorities.startsWith("$originalPackageName.")) continue
-                        provider.setAttribute("android:authorities", authorities.replace(originalPackageName, targetPackageName))
+                        if (authorities.contains("api.mars")) {
+                            provider.setAttribute("android:authorities", "$targetPackageName.api.mars")
+                        } else if (authorities.startsWith("$originalPackageName.")) {
+                            provider.setAttribute("android:authorities", authorities.replace(originalPackageName, targetPackageName))
+                        }
                     }
                 }
             }
