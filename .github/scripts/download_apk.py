@@ -12,6 +12,7 @@ import re
 import argparse
 import urllib.parse
 import json
+import time
 
 try:
     from curl_cffi import requests as cffi_requests
@@ -136,7 +137,7 @@ def _find_detail_link(soup):
             if "/apk/google-inc/photos/google-photos-" in href and (
                 href.endswith("-download/") or "android-apk-download" in href
             ):
-                link = urllib.parse.urljoin("https://www.apkmirror.com", href)
+                link = urllib.parse.urljoin("https://www.apkmirror.com", href).split("#")[0]
                 if link in seen_links:
                     continue
                 seen_links.add(link)
@@ -159,10 +160,10 @@ def _find_detail_link(soup):
 def _find_download_page_link(detail_soup):
     btn = detail_soup.find("a", class_=re.compile(r"downloadButton|accent_bg"))
     if btn and btn.get("href"):
-        return urllib.parse.urljoin("https://www.apkmirror.com", btn["href"])
+        return urllib.parse.urljoin("https://www.apkmirror.com", btn["href"]).split("#")[0]
     for a in detail_soup.find_all("a", href=True):
         if "download.php" in a["href"] or "android-apk-download/" in a["href"]:
-            link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"])
+            link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"]).split("#")[0]
             if "download.php" in a["href"]:
                 return link
     return None
@@ -288,76 +289,73 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
                 "--disable-blink-features=AutomationControlled",
             ],
         )
-        ctx = browser.new_context(
-            user_agent=HEADERS["User-Agent"],
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-            accept_downloads=True,
-        )
-        page = ctx.new_page()
-        page.add_init_script(
-            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
-        )
+        try:
+            ctx = browser.new_context(
+                user_agent=HEADERS["User-Agent"],
+                viewport={"width": 1280, "height": 800},
+                locale="en-US",
+                extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+                accept_downloads=True,
+            )
+            page = ctx.new_page()
+            page.add_init_script(
+                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+            )
 
-        # Step 1: variant listing page
-        print(f"[playwright] → {variant_url}")
-        page.goto(variant_url, wait_until="domcontentloaded", timeout=60000)
-        _pw_wait_for_cf(page)
+            # Step 1: variant listing page
+            print(f"[playwright] → {variant_url}")
+            page.goto(variant_url, wait_until="domcontentloaded", timeout=60000)
+            _pw_wait_for_cf(page)
 
-        soup = BeautifulSoup(page.content(), "html.parser")
-        detail_link, version_str = _find_detail_link(soup)
+            soup = BeautifulSoup(page.content(), "html.parser")
+            detail_link, version_str = _find_detail_link(soup)
 
-        if check_version_only:
-            browser.close()
-            if not version_str:
-                raise Exception("[playwright] Could not determine version.")
-            print(f"LATEST_VERSION={version_str}")
+            if check_version_only:
+                if not version_str:
+                    raise Exception("[playwright] Could not determine version.")
+                print(f"LATEST_VERSION={version_str}")
+                return version_str
+
+            if not detail_link:
+                raise Exception("[playwright] Could not find download link on APKMirror variant page.")
+
+            # Step 2: APK detail page
+            print(f"[playwright] → {detail_link}")
+            page.goto(detail_link, wait_until="domcontentloaded", timeout=60000)
+            _pw_wait_for_cf(page)
+
+            detail_soup = BeautifulSoup(page.content(), "html.parser")
+            dl_page = _find_download_page_link(detail_soup)
+            if not dl_page:
+                raise Exception("[playwright] Could not find APK download button page.")
+
+            # Step 3: download-button confirmation page
+            print(f"[playwright] → {dl_page}")
+            page.goto(dl_page, wait_until="domcontentloaded", timeout=60000)
+            _pw_wait_for_cf(page)
+
+            dl_html_raw = page.content()
+            dl_soup = BeautifulSoup(dl_html_raw, "html.parser")
+            final_link = _find_final_link(dl_soup, dl_html_raw)
+
+            if not final_link:
+                raise Exception("[playwright] Could not extract final download URL from APKMirror.")
+
+            # Step 4: download inside the live browser session by clicking download tag
+            print(f"[playwright] Triggering APK download via browser session: {final_link}")
+            with page.expect_download(timeout=300_000) as dl_info:
+                a_tag = page.query_selector("a[href*='download.php']")
+                if a_tag:
+                    a_tag.click()
+                else:
+                    page.evaluate(f"window.location.href = {json.dumps(final_link)}")
+            
+            download = dl_info.value
+            print(f"[playwright] Saving APK ({download.suggested_filename}) to: {output_path}")
+            download.save_as(output_path)
             return version_str
-
-        if not detail_link:
+        finally:
             browser.close()
-            raise Exception("[playwright] Could not find download link on APKMirror variant page.")
-
-        # Step 2: APK detail page
-        print(f"[playwright] → {detail_link}")
-        page.goto(detail_link, wait_until="domcontentloaded", timeout=60000)
-        _pw_wait_for_cf(page)
-
-        detail_soup = BeautifulSoup(page.content(), "html.parser")
-        dl_page = _find_download_page_link(detail_soup)
-        if not dl_page:
-            browser.close()
-            raise Exception("[playwright] Could not find APK download button page.")
-
-        # Step 3: download-button confirmation page
-        print(f"[playwright] → {dl_page}")
-        page.goto(dl_page, wait_until="domcontentloaded", timeout=60000)
-        _pw_wait_for_cf(page)
-
-        dl_html_raw = page.content()
-        dl_soup = BeautifulSoup(dl_html_raw, "html.parser")
-        final_link = _find_final_link(dl_soup, dl_html_raw)
-
-        if not final_link:
-            browser.close()
-            raise Exception("[playwright] Could not extract final download URL from APKMirror.")
-
-        # Step 4: download inside the live browser session by clicking download tag
-        print(f"[playwright] Triggering APK download via browser session: {final_link}")
-        with page.expect_download(timeout=300_000) as dl_info:
-            a_tag = page.query_selector("a[href*='download.php']")
-            if a_tag:
-                a_tag.click()
-            else:
-                page.evaluate(f"window.location.href = {json.dumps(final_link)}")
-        
-        download = dl_info.value
-        print(f"[playwright] Saving APK ({download.suggested_filename}) to: {output_path}")
-        download.save_as(output_path)
-        browser.close()
-
-    return version_str
 
 
 
@@ -372,6 +370,7 @@ def main():
     parser.add_argument("--variant-url", type=str, default=DEFAULT_VARIANT_URL)
     parser.add_argument("--output", type=str, default="google-photos.apk")
     parser.add_argument("--check-version", action="store_true")
+    parser.add_argument("--retries", type=int, default=3, help="Max retry attempts for scraping (default: 3)")
     args = parser.parse_args()
 
     # ---- direct URL shortcut ----
@@ -381,23 +380,46 @@ def main():
         version_str = "unknown"
     else:
         version_str = "unknown"
-        # Try fast path first, fall back to Playwright
-        try:
-            if args.check_version:
-                get_apkmirror_apk(args.variant_url, None, check_version_only=True)
-                return
-            version_str = get_apkmirror_apk(args.variant_url, args.output)
-        except Exception as e:
-            print(f"Direct scrape failed ({e}); retrying with Playwright…")
+        success = False
+        last_error = None
+        for attempt in range(1, args.retries + 1):
+            print(f"\n=== Download attempt {attempt}/{args.retries} ===")
+            # Try fast path first, fall back to Playwright
             try:
+                if args.check_version:
+                    get_apkmirror_apk(args.variant_url, None, check_version_only=True)
+                    return
+                version_str = get_apkmirror_apk(args.variant_url, args.output)
+                if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
+                    success = True
+                    break
+            except Exception as e:
+                print(f"[Attempt {attempt}] Direct scrape failed: {e}")
+                last_error = e
+
+            # Fall back to Playwright if direct failed
+            try:
+                print(f"[Attempt {attempt}] Retrying with Playwright…")
                 if args.check_version:
                     get_apkmirror_apk_playwright(args.variant_url, None, check_version_only=True)
                     return
                 version_str = get_apkmirror_apk_playwright(args.variant_url, args.output)
+                if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
+                    success = True
+                    break
             except Exception as e2:
-                print(f"Playwright scrape also failed: {e2}")
-                print("Pass --direct-url or trigger the workflow with a direct APK link.")
-                sys.exit(1)
+                print(f"[Attempt {attempt}] Playwright scrape failed: {e2}")
+                last_error = e2
+
+            if attempt < args.retries:
+                backoff = 10 * attempt
+                print(f"Waiting {backoff}s before next attempt...")
+                time.sleep(backoff)
+
+        if not success and not args.check_version:
+            print(f"\nAll {args.retries} download attempts failed! Last error: {last_error}")
+            print("Pass --direct-url or trigger the workflow with a direct APK link.")
+            sys.exit(1)
 
     # ---- validate download ----
     if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:

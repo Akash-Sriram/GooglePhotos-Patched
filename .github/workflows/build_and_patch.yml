@@ -98,7 +98,7 @@ jobs:
           if [ -n "$DIRECT_URL" ]; then
             python .github/scripts/download_apk.py --direct-url "$DIRECT_URL" --output google-photos-base.apk
           else
-            python .github/scripts/download_apk.py --output google-photos-base.apk
+            python .github/scripts/download_apk.py --retries 3 --output google-photos-base.apk
           fi
 
       - name: Extract Actual APK Version
