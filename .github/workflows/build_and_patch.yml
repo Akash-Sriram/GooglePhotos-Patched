@@ -129,6 +129,7 @@ jobs:
         run: |
           echo "🧩 [1/2] Building Mod Package (app.morphe.android.apps.photos)..."
           java -jar morphe-cli.jar patch \
+            -f \
             -p "${{ env.PATCH_PATH }}" \
             -d "Custom Morphe branding" \
             --unsigned \
@@ -137,6 +138,7 @@ jobs:
 
           echo "🧩 [2/2] Building Original Package (com.google.android.apps.photos)..."
           java -jar morphe-cli.jar patch \
+            -f \
             -p "${{ env.PATCH_PATH }}" \
             -e "Change to official package name" \
             -e "Disable Play Store updates" \
