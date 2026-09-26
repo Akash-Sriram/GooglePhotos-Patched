@@ -180,8 +180,8 @@ jobs:
           for FLAVOR in mod original; do
             echo "Processing and signing ${FLAVOR} package..."
 
-            # 1. Repack unsigned APK to fix local file header / central directory zip mismatches (e.g. assets/AltFormats_27)
-            python -c "import zipfile; in_zip = zipfile.ZipFile('patched-${FLAVOR}-unsigned.apk', 'r'); out_zip = zipfile.ZipFile('patched-${FLAVOR}-fixed.apk', 'w', compression=zipfile.ZIP_DEFLATED); [out_zip.writestr(item, in_zip.read(item.filename)) for item in in_zip.infolist()]; in_zip.close(); out_zip.close()"
+            # 1. Repack unsigned APK to fix zip header mismatches and compress resources.arsc (reducing size to ~180 MB)
+            python3 .github/scripts/repack_apk.py --input "patched-${FLAVOR}-unsigned.apk" --output "patched-${FLAVOR}-fixed.apk"
 
             # 2. Zipalign normalized archive with 4-byte and 16KB page alignment (Android 15+ compatible)
             $BUILD_TOOLS_DIR/zipalign -v -p 4 patched-${FLAVOR}-fixed.apk patched-${FLAVOR}-aligned.apk
