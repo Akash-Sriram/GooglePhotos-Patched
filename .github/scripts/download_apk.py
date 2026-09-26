@@ -23,7 +23,7 @@ except ImportError:
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    print("beautifulsoup4 not installed. Run: pip install beautifulsoup4 curl_cffi playwright")
+    print("beautifulsoup4 not installed. Run: pip install beautifulsoup4 curl_cffi")
     sys.exit(1)
 
 DEFAULT_VARIANT_URL = (
@@ -156,6 +156,46 @@ def _find_detail_link(soup):
     return best_link, best_ver
 
 
+def _find_fallback_detail_link(session=None):
+    """Scrapes the main /apk/google-inc/photos/ page and looks inside the latest release
+    variants table for a Universal nodpi APK (non-bundle)."""
+    main_url = "https://www.apkmirror.com/apk/google-inc/photos/"
+    try:
+        if session:
+            resp = session.get(main_url, headers=HEADERS, timeout=30)
+            html = resp.text
+        else:
+            html = fetch_url(main_url).decode("utf-8")
+        soup = BeautifulSoup(html, "html.parser")
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "/apk/google-inc/photos/google-photos-" in href and href.endswith("-release/"):
+                rel_url = urllib.parse.urljoin("https://www.apkmirror.com", href)
+                print(f"[fallback] Checking main release page: {rel_url}")
+                if session:
+                    rel_resp = session.get(rel_url, headers=HEADERS, timeout=30)
+                    rel_html = rel_resp.text
+                else:
+                    rel_html = fetch_url(rel_url).decode("utf-8")
+                rel_soup = BeautifulSoup(rel_html, "html.parser")
+                for row in rel_soup.find_all("div", class_="table-row"):
+                    text = " ".join(row.stripped_strings).lower()
+                    if "variant" in text and "arch" in text:
+                        continue
+                    if "apk" in text and "bundle" not in text and "nodpi" in text:
+                        if "universal" in text or ("arm64-v8a" in text and "x86" in text):
+                            for link in row.find_all("a", href=True):
+                                if "download" in link["href"]:
+                                    dl_link = urllib.parse.urljoin("https://www.apkmirror.com", link["href"]).split("#")[0]
+                                    m = re.search(r"google-photos-([0-9\-]+)", dl_link)
+                                    ver = m.group(1).replace("-", ".").rstrip(".") if m else None
+                                    print(f"[fallback] Found Universal variant link: {dl_link} (ver: {ver})")
+                                    return dl_link, ver
+    except Exception as e:
+        print(f"[fallback] Error querying main release page: {e}")
+    return None, None
+
+
 
 def _find_download_page_link(detail_soup):
     btn = detail_soup.find("a", class_=re.compile(r"downloadButton|accent_bg"))
@@ -195,6 +235,9 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
             raise Exception(f"HTTP Error {resp.status_code}: {resp.reason}")
         soup = BeautifulSoup(resp.text, "html.parser")
         detail_link, version_str = _find_detail_link(soup)
+        if not detail_link:
+            print("[direct] No release link on variant page; trying dynamic catalog fallback...")
+            detail_link, version_str = _find_fallback_detail_link(session=session)
         if check_version_only:
             if not version_str:
                 raise Exception("Could not determine version from APKMirror variant page.")
@@ -232,6 +275,9 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
         html = fetch_url(variant_url).decode("utf-8")
         soup = BeautifulSoup(html, "html.parser")
         detail_link, version_str = _find_detail_link(soup)
+        if not detail_link:
+            print("[direct] No release link on variant page; trying dynamic catalog fallback...")
+            detail_link, version_str = _find_fallback_detail_link()
         if check_version_only:
             if not version_str:
                 raise Exception("Could not determine version from APKMirror variant page.")
@@ -263,6 +309,19 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
 # Path 2: Playwright (headless Chromium — solves Cloudflare JS challenge)
 # ---------------------------------------------------------------------------
 
+def _ensure_playwright():
+    """Install playwright and chromium browser binaries on-demand if missing."""
+    try:
+        import playwright
+        return True
+    except ImportError:
+        print("[setup] Installing Playwright and Chromium on demand...")
+        import subprocess
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright"])
+        subprocess.check_call(["playwright", "install", "chromium", "--with-deps"])
+        return True
+
+
 def _pw_wait_for_cf(page, timeout=30000):
     """Wait until Cloudflare's 'Just a moment' interstitial clears."""
     try:
@@ -276,6 +335,7 @@ def _pw_wait_for_cf(page, timeout=30000):
 
 
 def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=False):
+    _ensure_playwright()
     from playwright.sync_api import sync_playwright
 
     print("[playwright] Launching headless Chromium to bypass Cloudflare...")
@@ -309,6 +369,9 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
 
             soup = BeautifulSoup(page.content(), "html.parser")
             detail_link, version_str = _find_detail_link(soup)
+            if not detail_link:
+                print("[playwright] No release link on variant page; trying dynamic catalog fallback...")
+                detail_link, version_str = _find_fallback_detail_link()
 
             if check_version_only:
                 if not version_str:
@@ -387,12 +450,15 @@ def main():
             # Try fast path first, fall back to Playwright
             try:
                 if args.check_version:
-                    get_apkmirror_apk(args.variant_url, None, check_version_only=True)
-                    return
-                version_str = get_apkmirror_apk(args.variant_url, args.output)
-                if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
-                    success = True
-                    break
+                    version_str = get_apkmirror_apk(args.variant_url, None, check_version_only=True)
+                    if version_str:
+                        success = True
+                        break
+                else:
+                    version_str = get_apkmirror_apk(args.variant_url, args.output)
+                    if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
+                        success = True
+                        break
             except Exception as e:
                 print(f"[Attempt {attempt}] Direct scrape failed: {e}")
                 last_error = e
@@ -401,12 +467,15 @@ def main():
             try:
                 print(f"[Attempt {attempt}] Retrying with Playwright…")
                 if args.check_version:
-                    get_apkmirror_apk_playwright(args.variant_url, None, check_version_only=True)
-                    return
-                version_str = get_apkmirror_apk_playwright(args.variant_url, args.output)
-                if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
-                    success = True
-                    break
+                    version_str = get_apkmirror_apk_playwright(args.variant_url, None, check_version_only=True)
+                    if version_str:
+                        success = True
+                        break
+                else:
+                    version_str = get_apkmirror_apk_playwright(args.variant_url, args.output)
+                    if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
+                        success = True
+                        break
             except Exception as e2:
                 print(f"[Attempt {attempt}] Playwright scrape failed: {e2}")
                 last_error = e2
@@ -416,10 +485,18 @@ def main():
                 print(f"Waiting {backoff}s before next attempt...")
                 time.sleep(backoff)
 
-        if not success and not args.check_version:
+        if not success:
             print(f"\nAll {args.retries} download attempts failed! Last error: {last_error}")
-            print("Pass --direct-url or trigger the workflow with a direct APK link.")
+            if not args.check_version:
+                print("Pass --direct-url or trigger the workflow with a direct APK link.")
             sys.exit(1)
+
+        if args.check_version:
+            print(f"apk_version={version_str}")
+            if "GITHUB_OUTPUT" in os.environ and version_str:
+                with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                    f.write(f"apk_version={version_str}\n")
+            return
 
     # ---- validate download ----
     if os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
