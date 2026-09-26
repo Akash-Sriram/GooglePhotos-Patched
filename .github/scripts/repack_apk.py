@@ -25,8 +25,10 @@ def repack_apk(input_path: str, output_path: str) -> None:
     orig_size = os.path.getsize(input_path)
     print(f"[*] Repacking {input_path} ({orig_size / (1024 * 1024):.2f} MB)...")
 
-    # Files that should be compressed with maximum Deflate
-    COMPRESS_TARGETS = {"resources.arsc"}
+    # TargetSdk >= 30 (Android 11+) requires resources.arsc to be STORED (uncompressed)
+    # and 4-byte aligned. Recompressing resources.arsc triggers PackageManager failure:
+    # "Failed parse during installPackageLI: Targeting R+ requires resources.arsc to be stored uncompressed".
+    COMPRESS_TARGETS = set()
 
     with zipfile.ZipFile(input_path, "r") as in_zip, zipfile.ZipFile(
         output_path, "w"

@@ -42,9 +42,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class GitHubReleaseChecker {
 
     private static final String REPO_RELEASES_URL = "https://api.github.com/repos/Akash-Sriram/GooglePhotos-Patched/releases/latest";
-    private static final String PREFS_NAME = "google_photos_updater_prefs";
-    private static final String KEY_HANDLED_ASSET_TIME = "handled_asset_time";
-    private static final String KEY_IGNORED_ASSET_TIME = "ignored_asset_time";
     private static boolean hasCheckedThisSession = false;
 
     public static void checkUpdateOnStartup(final Context context) {
@@ -143,13 +140,7 @@ public class GitHubReleaseChecker {
                     // Add 60-second grace threshold to avoid edge-timing on install
                     boolean isNewerBuild = false;
                     if (isSameVer && assetUpdatedAtMillis > 0) {
-                        long handledTime = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                .getLong(KEY_HANDLED_ASSET_TIME, 0);
-                        if (handledTime <= 0) {
-                            handledTime = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                    .getLong(KEY_IGNORED_ASSET_TIME, 0);
-                        }
-                        if (assetUpdatedAtMillis > handledTime && assetUpdatedAtMillis > (pInfo.lastUpdateTime + 60000L)) {
+                        if (assetUpdatedAtMillis > (pInfo.lastUpdateTime + 60000L)) {
                             isNewerBuild = true;
                         }
                     }
@@ -230,17 +221,6 @@ public class GitHubReleaseChecker {
         }
     }
 
-    private static void recordHandledAssetTime(Context context, long assetTime) {
-        if (context == null || assetTime <= 0) return;
-        try {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit()
-                    .putLong(KEY_HANDLED_ASSET_TIME, assetTime)
-                    .putLong(KEY_IGNORED_ASSET_TIME, assetTime)
-                    .apply();
-        } catch (Exception ignored) {}
-    }
-
     private static void showUpdateDialog(final Context context, final String newVersion, final String downloadUrl,
                                          final String currentVersion, final boolean isRebuild, final long assetTime,
                                          final String assetName) {
@@ -269,15 +249,37 @@ public class GitHubReleaseChecker {
                 .setTitle(isRebuild ? "Build Update Available" : "Update Available")
                 .setMessage(message)
                 .setPositiveButton("Update", (dialog, which) -> {
-                    recordHandledAssetTime(context, assetTime);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        boolean canInstall = false;
+                        try {
+                            canInstall = context.getPackageManager().canRequestPackageInstalls();
+                        } catch (SecurityException se) {
+                            Logger.printException(() -> "Missing REQUEST_INSTALL_PACKAGES permission check", se);
+                        }
+                        if (!canInstall) {
+                            new AlertDialog.Builder(context, getDialogTheme(context))
+                                    .setTitle("Permission Required")
+                                    .setMessage("Google Photos requires permission to install updates.\n\nPlease allow 'Install unknown apps' in the next screen, then tap Update again.")
+                                    .setPositiveButton("Settings", (d, w) -> {
+                                        try {
+                                            Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                                            settingsIntent.setData(Uri.parse("package:" + context.getPackageName()));
+                                            settingsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                            context.startActivity(settingsIntent);
+                                        } catch (Exception ex) {
+                                            Intent genericIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                                            genericIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                            context.startActivity(genericIntent);
+                                        }
+                                    })
+                                    .setNegativeButton("Cancel", null)
+                                    .show();
+                            return;
+                        }
+                    }
                     downloadAndInstallApk(context, newVersion, downloadUrl, assetName);
                 })
-                .setNegativeButton("Later", (dialog, which) -> {
-                    recordHandledAssetTime(context, assetTime);
-                })
-                .setOnCancelListener(dialog -> {
-                    recordHandledAssetTime(context, assetTime);
-                })
+                .setNegativeButton("Later", null)
                 .setCancelable(true)
                 .show();
     }
