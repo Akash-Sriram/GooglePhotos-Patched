@@ -630,19 +630,51 @@ public class GitHubReleaseChecker {
             Uri apkUri = null;
             try {
                 Class<?> fpClass = Class.forName("androidx.core.content.FileProvider");
-                Method getUriMethod = fpClass.getMethod("getUriForFile", Context.class, String.class, File.class);
-                apkUri = (Uri) getUriMethod.invoke(null, context, context.getPackageName() + ".fileprovider", apkFile);
+                Method getUriMethod = null;
+                try {
+                    getUriMethod = fpClass.getMethod("getUriForFile", Context.class, String.class, File.class);
+                } catch (NoSuchMethodException e) {
+                    // Method was renamed by R8/ProGuard (e.g. 'a(Context, String, File) -> Uri')
+                    for (Method m : fpClass.getDeclaredMethods()) {
+                        if (java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                                && m.getReturnType() == Uri.class
+                                && m.getParameterTypes().length == 3
+                                && m.getParameterTypes()[0] == Context.class
+                                && m.getParameterTypes()[1] == String.class
+                                && m.getParameterTypes()[2] == File.class) {
+                            getUriMethod = m;
+                            getUriMethod.setAccessible(true);
+                            break;
+                        }
+                    }
+                }
+
+                if (getUriMethod != null) {
+                    apkUri = (Uri) getUriMethod.invoke(null, context, context.getPackageName() + ".fileprovider", apkFile);
+                }
             } catch (Exception e) {
                 Logger.printException(() -> "Error obtaining FileProvider URI via reflection", e);
             }
 
+            // Fallback: Build content URI matching registered FileProvider cache path in res/SdZ.xml
             if (apkUri == null) {
-                apkUri = Uri.fromFile(apkFile);
+                apkUri = Uri.parse("content://" + context.getPackageName() + ".fileprovider/stickers/" + Uri.encode(apkFile.getName()));
             }
 
             Intent installIntent = new Intent(Intent.ACTION_VIEW);
             installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
             installIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            // Grant URI permission explicitly to package installer activities
+            try {
+                java.util.List<android.content.pm.ResolveInfo> resolveInfoList =
+                        context.getPackageManager().queryIntentActivities(installIntent, PackageManager.MATCH_DEFAULT_ONLY);
+                for (android.content.pm.ResolveInfo resolveInfo : resolveInfoList) {
+                    String targetPackage = resolveInfo.activityInfo.packageName;
+                    context.grantUriPermission(targetPackage, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                }
+            } catch (Exception ignored) {}
+
             context.startActivity(installIntent);
         } catch (Exception e) {
             Logger.printException(() -> "Error triggering package installer", e);
