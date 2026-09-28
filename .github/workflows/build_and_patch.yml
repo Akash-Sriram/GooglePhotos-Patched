@@ -37,13 +37,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install beautifulsoup4 curl_cffi
 
-      - name: Check Latest APKMirror Version & Existing Release
+      - name: Check Latest APKMirror Version
+        id: check_upstream
+        run: |
+          python .github/scripts/download_apk.py --check-version
+
+      - name: Check Existing Release
         id: check_release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python .github/scripts/download_apk.py --check-version
-          APK_VER="${{ steps.check_release.outputs.apk_version }}"
+          RAW_VER="${{ steps.check_upstream.outputs.apk_version }}"
+          APK_VER=$(echo "$RAW_VER" | sed -e 's/[^0-9.]//g' -e 's/\.*$//')
           echo "Latest upstream version found: $APK_VER"
           if [ -n "$APK_VER" ] && [ "${{ github.event_name }}" = "schedule" ]; then
             TAG="v${APK_VER}"
