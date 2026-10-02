@@ -329,11 +329,6 @@ public class GitHubReleaseChecker {
         final int primaryTextColor = resolveThemeColor(dialogContext, android.R.attr.textColorPrimary, isDark ? 0xFFFFFFFF : 0xDE000000);
         final int secondaryTextColor = resolveThemeColor(dialogContext, android.R.attr.textColorSecondary, isDark ? 0xB3FFFFFF : 0x8A000000);
 
-        final float density = context.getResources().getDisplayMetrics().density;
-        final int pad20 = (int) (20 * density);
-        final int pad10 = (int) (10 * density);
-        final int pad6 = (int) (6 * density);
-
         // Programmatically build informative UI layout using dialog's themed context
         LinearLayout layout = new LinearLayout(dialogContext);
         layout.setOrientation(LinearLayout.VERTICAL);
