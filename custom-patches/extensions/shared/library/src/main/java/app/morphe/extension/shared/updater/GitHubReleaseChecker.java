@@ -223,6 +223,26 @@ public class GitHubReleaseChecker {
         }
     }
 
+    private static int resolveThemeColor(Context context, int attrResId, int fallbackColor) {
+        try {
+            TypedValue tv = new TypedValue();
+            if (context.getTheme().resolveAttribute(attrResId, tv, true)) {
+                if (tv.type >= TypedValue.TYPE_FIRST_COLOR_INT && tv.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+                    return tv.data;
+                }
+                int resId = tv.resourceId != 0 ? tv.resourceId : tv.data;
+                if (resId != 0) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        return context.getColor(resId);
+                    } else {
+                        return context.getResources().getColor(resId);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return fallbackColor;
+    }
+
     private static void showUpdateDialog(final Context context, final String newVersion, final String downloadUrl,
                                          final String currentVersion, final boolean isRebuild, final long assetTime,
                                          final String assetName) {
@@ -301,27 +321,39 @@ public class GitHubReleaseChecker {
         final int pad10 = (int) (10 * density);
         final int pad6 = (int) (6 * density);
 
-        // Programmatically build informative UI layout
-        LinearLayout layout = new LinearLayout(context);
+        final AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(context, getDialogTheme(context));
+        final Context dialogContext = dialogBuilder.getContext();
+
+        final boolean isDark = (context.getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        final int primaryTextColor = resolveThemeColor(dialogContext, android.R.attr.textColorPrimary, isDark ? 0xFFFFFFFF : 0xDE000000);
+        final int secondaryTextColor = resolveThemeColor(dialogContext, android.R.attr.textColorSecondary, isDark ? 0xB3FFFFFF : 0x8A000000);
+
+        final float density = context.getResources().getDisplayMetrics().density;
+        final int pad20 = (int) (20 * density);
+        final int pad10 = (int) (10 * density);
+        final int pad6 = (int) (6 * density);
+
+        // Programmatically build informative UI layout using dialog's themed context
+        LinearLayout layout = new LinearLayout(dialogContext);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(pad20, pad20, pad20, pad10);
+        layout.setPadding(pad20, (int) (14 * density), pad20, pad10);
 
         // 1. Filename header
-        TextView fileNameView = new TextView(context);
+        TextView fileNameView = new TextView(dialogContext);
         fileNameView.setText(apkFileName);
-        fileNameView.setTextSize(14);
+        fileNameView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         fileNameView.setTypeface(null, android.graphics.Typeface.BOLD);
         fileNameView.setSingleLine(true);
         fileNameView.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        try {
-            TypedValue tv = new TypedValue();
-            context.getTheme().resolveAttribute(android.R.attr.textColorPrimary, tv, true);
-            fileNameView.setTextColor(tv.data);
-        } catch (Exception ignored) {}
+        fileNameView.setTextColor(primaryTextColor);
+        LinearLayout.LayoutParams fnLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        fileNameView.setLayoutParams(fnLp);
         layout.addView(fileNameView);
 
         // 2. Horizontal Progress Bar (1000 steps for 0.1% resolution)
-        final ProgressBar progressBar = new ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal);
+        final ProgressBar progressBar = new ProgressBar(dialogContext, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(1000);
         progressBar.setIndeterminate(true);
         LinearLayout.LayoutParams pbLp = new LinearLayout.LayoutParams(
@@ -331,25 +363,20 @@ public class GitHubReleaseChecker {
         layout.addView(progressBar);
 
         // 3. Progress Info Text (percentage + downloaded / total MB)
-        final TextView progressInfoView = new TextView(context);
+        final TextView progressInfoView = new TextView(dialogContext);
         progressInfoView.setText("Connecting to server...");
-        progressInfoView.setTextSize(13);
-        try {
-            TypedValue tv = new TypedValue();
-            context.getTheme().resolveAttribute(android.R.attr.textColorPrimary, tv, true);
-            progressInfoView.setTextColor(tv.data);
-        } catch (Exception ignored) {}
+        progressInfoView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        progressInfoView.setTextColor(primaryTextColor);
+        LinearLayout.LayoutParams piLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        progressInfoView.setLayoutParams(piLp);
         layout.addView(progressInfoView);
 
         // 4. Transfer Speed & ETA Info Text
-        final TextView speedInfoView = new TextView(context);
-        speedInfoView.setText("Speed: calculating... • ETA: --");
-        speedInfoView.setTextSize(12);
-        try {
-            TypedValue tv = new TypedValue();
-            context.getTheme().resolveAttribute(android.R.attr.textColorSecondary, tv, true);
-            speedInfoView.setTextColor(tv.data);
-        } catch (Exception ignored) {}
+        final TextView speedInfoView = new TextView(dialogContext);
+        speedInfoView.setText("Speed: calculating...  •  ETA: --");
+        speedInfoView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        speedInfoView.setTextColor(secondaryTextColor);
         LinearLayout.LayoutParams speedLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         speedLp.setMargins(0, pad6, 0, 0);
@@ -359,7 +386,7 @@ public class GitHubReleaseChecker {
         final AtomicBoolean isCancelled = new AtomicBoolean(false);
         final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-        final AlertDialog downloadDialog = new AlertDialog.Builder(context, getDialogTheme(context))
+        final AlertDialog downloadDialog = dialogBuilder
                 .setTitle("Downloading Update")
                 .setView(layout)
                 .setCancelable(false)
@@ -566,8 +593,10 @@ public class GitHubReleaseChecker {
         if (bytesPerSec <= 0) return "-- MB/s";
         if (bytesPerSec >= 1024.0 * 1024.0) {
             return String.format(Locale.US, "%.1f MB/s", bytesPerSec / (1024.0 * 1024.0));
-        } else {
+        } else if (bytesPerSec >= 1024.0) {
             return String.format(Locale.US, "%.0f KB/s", bytesPerSec / 1024.0);
+        } else {
+            return String.format(Locale.US, "%.0f B/s", bytesPerSec);
         }
     }
 
@@ -576,10 +605,14 @@ public class GitHubReleaseChecker {
         long totalSecs = (long) (remainingBytes / speedBytesPerSec);
         if (totalSecs < 60) {
             return "~" + totalSecs + "s";
-        } else {
+        } else if (totalSecs < 3600) {
             long mins = totalSecs / 60;
             long secs = totalSecs % 60;
             return mins + "m " + secs + "s";
+        } else {
+            long hours = totalSecs / 3600;
+            long mins = (totalSecs % 3600) / 60;
+            return hours + "h " + mins + "m";
         }
     }
 
