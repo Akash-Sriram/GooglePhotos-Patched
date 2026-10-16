@@ -146,8 +146,8 @@ jobs:
             -f \
             -p "${{ env.PATCH_PATH }}" \
             -d "Custom Morphe branding" \
-            -O components="both" \
             -e "Flag manager & Toolkit" \
+            -O components="both" \
             --unsigned \
             -o patched-mod-unsigned.apk \
             google-photos-base.apk
@@ -158,8 +158,8 @@ jobs:
             -p "${{ env.PATCH_PATH }}" \
             -e "Official package name" \
             -d "Custom Morphe branding" \
-            -O components="both" \
             -e "Flag manager & Toolkit" \
+            -O components="both" \
             --unsigned \
             -o patched-original-unsigned.apk \
             google-photos-base.apk
