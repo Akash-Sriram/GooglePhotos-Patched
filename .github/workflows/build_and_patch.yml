@@ -249,20 +249,8 @@ jobs:
           APK_ORIGINAL="${{ env.RELEASE_APK_ORIGINAL }}"
 
           cat <<EOF | sed -e 's/^          //' > release_notes.md
-          Patched with [Morphe Google Photos](https://github.com/Akash-Sriram/morphe-google-photos).
-
-          ### Packages
-          * **Mod (\`app.morphe.android.apps.photos\`)**: Can be installed alongside official Google Photos (non-root).
-          * **Original (\`com.google.android.apps.photos\`)**: Replaces official Google Photos (requires root / CorePatch).
-
-          ### Features
-          * Unlimited Original quality backup (Pixel spoofing)
-          * Magic Editor, Magic Eraser, Best Take, Photo Unblur & Ultra HDR
-          * In-app Morphe Settings & Flag Manager
-          * Media export redirected to \`Pictures/GooglePhotos_Export\`
-          * Material 3 UI polish
-
-          > 4-byte & 16KB page-aligned (Android 15+ compatible), signed with Morphe release key.
+          * **Mod** (\`app.morphe.android.apps.photos\`): Non-root (installs alongside official Google Photos)
+          * **Original** (\`com.google.android.apps.photos\`): Root / CorePatch (replaces official Google Photos)
           EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then
