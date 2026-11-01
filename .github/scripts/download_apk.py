@@ -198,14 +198,19 @@ def _find_fallback_detail_link(session=None):
 
 
 def _find_download_page_link(detail_soup):
-    btn = detail_soup.find("a", class_=re.compile(r"downloadButton|accent_bg"))
+    btn = detail_soup.find("a", class_=re.compile(r"downloadButton|accent_bg|download-btn", re.I))
     if btn and btn.get("href"):
         return urllib.parse.urljoin("https://www.apkmirror.com", btn["href"]).split("#")[0]
     for a in detail_soup.find_all("a", href=True):
-        if "download.php" in a["href"] or "android-apk-download/" in a["href"]:
-            link = urllib.parse.urljoin("https://www.apkmirror.com", a["href"]).split("#")[0]
-            if "download.php" in a["href"]:
-                return link
+        text = a.get_text().strip().lower()
+        title = a.get("title", "").strip().lower()
+        href = a["href"].strip()
+        if "download apk" in text or "download apk" in title:
+            return urllib.parse.urljoin("https://www.apkmirror.com", href).split("#")[0]
+        if href.endswith("/download/") or "/download/?" in href:
+            return urllib.parse.urljoin("https://www.apkmirror.com", href).split("#")[0]
+        if "download.php" in href:
+            return urllib.parse.urljoin("https://www.apkmirror.com", href).split("#")[0]
     return None
 
 
