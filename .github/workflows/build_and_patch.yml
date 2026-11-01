@@ -251,34 +251,34 @@ jobs:
           HASH_MOD=$(sha256sum "$APK_MOD" | awk '{print $1}')
           HASH_ORIGINAL=$(sha256sum "$APK_ORIGINAL" | awk '{print $1}')
 
-          cat <<EOF > release_notes.md
-## Google Photos v${{ env.RELEASE_VERSION }} (Patched)
+          cat <<EOF | sed -e 's/^          //' > release_notes.md
+          ## Google Photos v${{ env.RELEASE_VERSION }} (Patched)
 
-Automated build of Google Photos patched with [Morphe Google Photos](https://github.com/Akash-Sriram/morphe-google-photos) patches.
+          Automated build of Google Photos patched with [Morphe Google Photos](https://github.com/Akash-Sriram/morphe-google-photos) patches.
 
-### Packages Included
-* **Mod Package** (\`app.morphe.android.apps.photos\`):
-  * Custom package name. Can be installed alongside the official Google Photos app without conflicts.
-  * Recommended for non-root users.
-* **Original Package** (\`com.google.android.apps.photos\`):
-  * Official package name. Replaces the system Google Photos app (requires root or CorePatch).
+          ### Packages Included
+          * **Mod Package** (\`app.morphe.android.apps.photos\`):
+            * Custom package name. Can be installed alongside the official Google Photos app without conflicts.
+            * Recommended for non-root users.
+          * **Original Package** (\`com.google.android.apps.photos\`):
+            * Official package name. Replaces the system Google Photos app (requires root or CorePatch).
 
-### Features & Patches
-* **Unlimited Backup**: Google Photos Pixel backup spoofing for unlimited photo/video backup.
-* **Morphe Settings & Flag Manager**: Custom in-app settings to toggle features, developer flags, and preferences.
-* **Photo Tools & AI Editing**: Access to Google Photos editing tools (Magic Editor, Magic Eraser, Best Take, Photo Unblur, Ultra HDR).
-* **Direct Pictures Export**: Toolkit media exports saved directly to standard \`Pictures/GooglePhotos_Export\`.
-* **Material 3 UI Polish**: Clean, native Android 12+ Material You settings styling.
+          ### Features & Patches
+          * **Unlimited Backup**: Google Photos Pixel backup spoofing for unlimited photo/video backup.
+          * **Morphe Settings & Flag Manager**: Custom in-app settings to toggle features, developer flags, and preferences.
+          * **Photo Tools & AI Editing**: Access to Google Photos editing tools (Magic Editor, Magic Eraser, Best Take, Photo Unblur, Ultra HDR).
+          * **Direct Pictures Export**: Toolkit media exports saved directly to standard \`Pictures/GooglePhotos_Export\`.
+          * **Material 3 UI Polish**: Clean, native Android 12+ Material You settings styling.
 
-### Verification & Checksums
-| Package | File | SHA-256 Checksum |
-| :--- | :--- | :--- |
-| **Mod** | \`$APK_MOD\` | \`$HASH_MOD\` |
-| **Original** | \`$APK_ORIGINAL\` | \`$HASH_ORIGINAL\` |
+          ### Verification & Checksums
+          | Package | File | SHA-256 Checksum |
+          | :--- | :--- | :--- |
+          | **Mod** | \`$APK_MOD\` | \`$HASH_MOD\` |
+          | **Original** | \`$APK_ORIGINAL\` | \`$HASH_ORIGINAL\` |
 
-> [!NOTE]
-> All packages are 4-byte and 16KB page-aligned (Android 15+ compatible) and signed with the official Morphe release key.
-EOF
+          > [!NOTE]
+          > All packages are 4-byte and 16KB page-aligned (Android 15+ compatible) and signed with the official Morphe release key.
+          EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG exists. Overwriting APK assets and updating notes..."
