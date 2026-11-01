@@ -530,41 +530,6 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
             browser.close()
 
 
-def get_github_stock_apk(output_path, target_version=None):
-    """Fallback to downloading stock APK from repository's stock-apks release."""
-    print("[fallback] Checking GitHub Releases stock-apks fallback...")
-    api_url = "https://api.github.com/repos/Akash-Sriram/GooglePhotos-Patched/releases/tags/stock-apks"
-    try:
-        import urllib.request
-        req = urllib.request.Request(api_url, headers={"User-Agent": "curl/8.0"})
-        if "GITHUB_TOKEN" in os.environ:
-            req.add_header("Authorization", f"token {os.environ['GITHUB_TOKEN']}")
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-
-        assets = data.get("assets", [])
-        chosen_asset = None
-        for asset in assets:
-            name = asset.get("name", "")
-            if name.endswith(".apk"):
-                if target_version and target_version in name:
-                    chosen_asset = asset
-                    break
-                elif not chosen_asset:
-                    chosen_asset = asset
-
-        if chosen_asset:
-            dl_url = chosen_asset.get("browser_download_url")
-            print(f"[fallback] Found stock APK asset: {chosen_asset.get('name')} -> {dl_url}")
-            download_file(dl_url, output_path)
-            m = re.search(r"photos_([0-9\.]+)", chosen_asset.get("name"))
-            ver = m.group(1).rstrip(".") if m else (target_version or "unknown")
-            return ver
-    except Exception as e:
-        print(f"[fallback] Could not fetch stock-apks release: {e}")
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -627,14 +592,6 @@ def main():
                 backoff = 10 * attempt
                 print(f"Waiting {backoff}s before next attempt...")
                 time.sleep(backoff)
-
-        if not success and not args.check_version:
-            print("\nAPKMirror scraping attempts failed. Trying repository stock-apks fallback...")
-            fb_ver = get_github_stock_apk(args.output, version_str if version_str != "unknown" else None)
-            if fb_ver and os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
-                print(f"[fallback] Successfully acquired stock APK from GitHub release (ver: {fb_ver})")
-                version_str = fb_ver
-                success = True
 
         if not success:
             print(f"\nAll {args.retries} download attempts failed! Last error: {last_error}")
