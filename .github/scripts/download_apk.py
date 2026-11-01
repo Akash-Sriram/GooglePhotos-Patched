@@ -486,27 +486,83 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
             if not final_link:
                 raise Exception(f"[playwright] Could not extract final download URL from APKMirror (page title: '{page.title()}').")
 
-            # Step 4: download inside the live browser session by clicking download tag
+            # Step 4: download inside the live browser session
             print(f"[playwright] Triggering APK download via browser session: {final_link}")
-            with page.expect_download(timeout=300_000) as dl_info:
-                a_tag = (
-                    page.query_selector("a[href*='key=']")
-                    or page.query_selector("a.downloadButton")
-                    or page.query_selector("a.accent_bg")
-                    or page.query_selector("a[href*='download.php']")
-                )
-                if a_tag:
-                    a_tag.click()
-                else:
-                    page.evaluate(f"window.location.href = {json.dumps(final_link)}")
-            
-            download = dl_info.value
+            downloads = []
+            page.on("download", lambda dl: downloads.append(dl))
+
+            a_tag = (
+                page.query_selector("a#download-link")
+                or page.query_selector("a[href*='download.php']")
+                or page.query_selector("a.downloadButton")
+                or page.query_selector("a.accent_bg")
+                or page.query_selector("a[href*='key=']")
+            )
+            if a_tag:
+                a_tag.click()
+            else:
+                page.evaluate(f"window.location.href = {json.dumps(final_link)}")
+
+            # In case clicking download.php triggers a Cloudflare challenge
+            _pw_wait_for_cf(page, timeout=30000)
+
+            # Wait for download event
+            dl_start = time.time()
+            while not downloads and (time.time() - dl_start < 45):
+                page.wait_for_timeout(1000)
+
+            if not downloads:
+                print(f"[playwright] Download not yet initiated; trying direct navigation to {final_link}...")
+                page.evaluate(f"window.location.href = {json.dumps(final_link)}")
+                _pw_wait_for_cf(page, timeout=30000)
+                dl_start = time.time()
+                while not downloads and (time.time() - dl_start < 45):
+                    page.wait_for_timeout(1000)
+
+            if not downloads:
+                raise Exception(f"[playwright] Download did not start within timeout (page title: '{page.title()}').")
+
+            download = downloads[0]
             print(f"[playwright] Saving APK ({download.suggested_filename}) to: {output_path}")
             download.save_as(output_path)
             return version_str
         finally:
             browser.close()
 
+
+def get_github_stock_apk(output_path, target_version=None):
+    """Fallback to downloading stock APK from repository's stock-apks release."""
+    print("[fallback] Checking GitHub Releases stock-apks fallback...")
+    api_url = "https://api.github.com/repos/Akash-Sriram/GooglePhotos-Patched/releases/tags/stock-apks"
+    try:
+        import urllib.request
+        req = urllib.request.Request(api_url, headers={"User-Agent": "curl/8.0"})
+        if "GITHUB_TOKEN" in os.environ:
+            req.add_header("Authorization", f"token {os.environ['GITHUB_TOKEN']}")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        assets = data.get("assets", [])
+        chosen_asset = None
+        for asset in assets:
+            name = asset.get("name", "")
+            if name.endswith(".apk"):
+                if target_version and target_version in name:
+                    chosen_asset = asset
+                    break
+                elif not chosen_asset:
+                    chosen_asset = asset
+
+        if chosen_asset:
+            dl_url = chosen_asset.get("browser_download_url")
+            print(f"[fallback] Found stock APK asset: {chosen_asset.get('name')} -> {dl_url}")
+            download_file(dl_url, output_path)
+            m = re.search(r"photos_([0-9\.]+)", chosen_asset.get("name"))
+            ver = m.group(1).rstrip(".") if m else (target_version or "unknown")
+            return ver
+    except Exception as e:
+        print(f"[fallback] Could not fetch stock-apks release: {e}")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +627,14 @@ def main():
                 backoff = 10 * attempt
                 print(f"Waiting {backoff}s before next attempt...")
                 time.sleep(backoff)
+
+        if not success and not args.check_version:
+            print("\nAPKMirror scraping attempts failed. Trying repository stock-apks fallback...")
+            fb_ver = get_github_stock_apk(args.output, version_str if version_str != "unknown" else None)
+            if fb_ver and os.path.exists(args.output) and os.path.getsize(args.output) > 1_000_000:
+                print(f"[fallback] Successfully acquired stock APK from GitHub release (ver: {fb_ver})")
+                version_str = fb_ver
+                success = True
 
         if not success:
             print(f"\nAll {args.retries} download attempts failed! Last error: {last_error}")

@@ -133,6 +133,8 @@ jobs:
       - name: Download Google Photos APK
         if: steps.check_release.outputs.skip != 'true'
         id: download_apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DIRECT_URL="${{ inputs.direct_apk_url }}"
           if [ -n "$DIRECT_URL" ]; then
