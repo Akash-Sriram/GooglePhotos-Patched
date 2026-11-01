@@ -197,7 +197,7 @@ def _find_fallback_detail_link(session=None):
 
 
 
-def _find_download_page_link(detail_soup):
+def _find_download_page_link(detail_soup, detail_url=None):
     btn = detail_soup.find("a", class_=re.compile(r"downloadButton|accent_bg|download-btn", re.I))
     if btn and btn.get("href"):
         return urllib.parse.urljoin("https://www.apkmirror.com", btn["href"]).split("#")[0]
@@ -211,6 +211,10 @@ def _find_download_page_link(detail_soup):
             return urllib.parse.urljoin("https://www.apkmirror.com", href).split("#")[0]
         if "download.php" in href:
             return urllib.parse.urljoin("https://www.apkmirror.com", href).split("#")[0]
+    if detail_url and ("android-apk-download" in detail_url or detail_url.endswith("-download/")):
+        constructed = f"{detail_url.rstrip('/')}/download/"
+        print(f"[download-link] Using fallback constructed download page: {constructed}")
+        return constructed
     return None
 
 
@@ -256,7 +260,7 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
         if resp2.status_code != 200:
             raise Exception(f"HTTP Error {resp2.status_code}: {resp2.reason}")
         soup2 = BeautifulSoup(resp2.text, "html.parser")
-        dl_page = _find_download_page_link(soup2)
+        dl_page = _find_download_page_link(soup2, detail_link)
         if not dl_page:
             raise Exception("Could not find APK download button page.")
 
@@ -294,7 +298,7 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
         print(f"[direct] Detail page: {detail_link}")
         detail_html = fetch_url(detail_link).decode("utf-8")
         detail_soup = BeautifulSoup(detail_html, "html.parser")
-        dl_page = _find_download_page_link(detail_soup)
+        dl_page = _find_download_page_link(detail_soup, detail_link)
         if not dl_page:
             raise Exception("Could not find APK download button page.")
 
@@ -315,57 +319,130 @@ def get_apkmirror_apk(variant_url, output_path, check_version_only=False):
 # ---------------------------------------------------------------------------
 
 def _ensure_playwright():
-    """Install playwright and chromium browser binaries on-demand if missing."""
+    """Install playwright, playwright-stealth, and chromium browser binaries on-demand if missing."""
     try:
         import playwright
+        import playwright_stealth
         return True
     except ImportError:
-        print("[setup] Installing Playwright and Chromium on demand...")
+        print("[setup] Installing Playwright, playwright-stealth, and Chromium on demand...")
         import subprocess
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "playwright-stealth"])
         subprocess.check_call(["playwright", "install", "chromium", "--with-deps"])
         return True
 
 
-def _pw_wait_for_cf(page, timeout=30000):
-    """Wait until Cloudflare's 'Just a moment' interstitial clears."""
-    try:
-        page.wait_for_function(
-            "() => !document.title.includes('Just a moment') && document.readyState === 'complete'",
-            timeout=timeout,
+def _pw_wait_for_cf(page, timeout=45000):
+    """Wait until Cloudflare challenge clears, detecting and clicking Turnstile checkbox if present."""
+    start_time = time.time()
+    last_click_time = 0.0
+
+    while time.time() - start_time < (timeout / 1000.0):
+        try:
+            title = page.title()
+        except Exception:
+            title = ""
+
+        is_cf_page = any(
+            p.lower() in title.lower()
+            for p in ["Just a moment", "Cloudflare", "Attention Required", "Security Check"]
         )
+
+        # If title no longer indicates Cloudflare interstitial, verify page readiness
+        if not is_cf_page and title != "":
+            try:
+                ready_state = page.evaluate("document.readyState")
+                if ready_state in ("interactive", "complete"):
+                    page.wait_for_timeout(1500)
+                    return
+            except Exception:
+                return
+
+        # Attempt to detect and solve interactive Turnstile iframe if present
+        now = time.time()
+        if now - last_click_time > 5.0:
+            targets = [page] + list(page.frames)
+            for target in targets:
+                url = getattr(target, "url", "") or ""
+                # Check frames from cloudflare or main challenge stage
+                if "challenges.cloudflare.com" in url or "turnstile" in url or "challenge-platform" in url or is_cf_page:
+                    for sel in [
+                        "input[type='checkbox']",
+                        ".ctp-checkbox-label",
+                        "#challenge-stage",
+                        "label.cb-lb",
+                        "div#turnstile-wrapper",
+                        "span.mark",
+                    ]:
+                        try:
+                            loc = target.locator(sel)
+                            if loc.count() > 0:
+                                print(f"[playwright] Found Cloudflare Turnstile element ({sel}), clicking...")
+                                loc.first.click(timeout=3000, force=True)
+                                last_click_time = time.time()
+                                time.sleep(3)
+                                break
+                        except Exception:
+                            pass
+                    if last_click_time > now:
+                        break
+
+        page.wait_for_timeout(1000)
+
+    try:
+        current_title = page.title()
     except Exception:
-        pass
+        current_title = "unknown"
+    print(f"[playwright] Settle wait completed. Current page title: '{current_title}'")
     page.wait_for_timeout(2000)
 
 
 def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=False):
     _ensure_playwright()
     from playwright.sync_api import sync_playwright
+    try:
+        from playwright_stealth import stealth_sync
+        has_stealth = True
+    except ImportError:
+        has_stealth = False
 
-    print("[playwright] Launching headless Chromium to bypass Cloudflare...")
+    has_display = bool(os.environ.get("DISPLAY"))
+    is_headless = not has_display if "HEADLESS" not in os.environ else (os.environ["HEADLESS"].lower() not in ("0", "false", "no"))
+    print(f"[playwright] Launching Chromium (headless={is_headless}, display={os.environ.get('DISPLAY')}) to bypass Cloudflare...")
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=True,
+            headless=is_headless,
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
             ],
         )
         try:
             ctx = browser.new_context(
                 user_agent=HEADERS["User-Agent"],
-                viewport={"width": 1280, "height": 800},
+                viewport={"width": 1920, "height": 1080},
+                device_scale_factor=1,
+                has_touch=False,
                 locale="en-US",
-                extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+                timezone_id="America/New_York",
+                extra_http_headers={
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+                    "Sec-Ch-Ua-Mobile": "?0",
+                    "Sec-Ch-Ua-Platform": '"Windows"',
+                },
                 accept_downloads=True,
             )
             page = ctx.new_page()
-            page.add_init_script(
-                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
-            )
+            if has_stealth:
+                stealth_sync(page)
+            else:
+                page.add_init_script(
+                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+                )
 
             # Step 1: variant listing page
             print(f"[playwright] → {variant_url}")
@@ -380,12 +457,12 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
 
             if check_version_only:
                 if not version_str:
-                    raise Exception("[playwright] Could not determine version.")
+                    raise Exception(f"[playwright] Could not determine version (page title: '{page.title()}').")
                 print(f"LATEST_VERSION={version_str}")
                 return version_str
 
             if not detail_link:
-                raise Exception("[playwright] Could not find download link on APKMirror variant page.")
+                raise Exception(f"[playwright] Could not find download link on APKMirror variant page (page title: '{page.title()}').")
 
             # Step 2: APK detail page
             print(f"[playwright] → {detail_link}")
@@ -393,9 +470,9 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
             _pw_wait_for_cf(page)
 
             detail_soup = BeautifulSoup(page.content(), "html.parser")
-            dl_page = _find_download_page_link(detail_soup)
+            dl_page = _find_download_page_link(detail_soup, detail_link)
             if not dl_page:
-                raise Exception("[playwright] Could not find APK download button page.")
+                raise Exception(f"[playwright] Could not find APK download button page (page title: '{page.title()}').")
 
             # Step 3: download-button confirmation page
             print(f"[playwright] → {dl_page}")
@@ -407,12 +484,17 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
             final_link = _find_final_link(dl_soup, dl_html_raw)
 
             if not final_link:
-                raise Exception("[playwright] Could not extract final download URL from APKMirror.")
+                raise Exception(f"[playwright] Could not extract final download URL from APKMirror (page title: '{page.title()}').")
 
             # Step 4: download inside the live browser session by clicking download tag
             print(f"[playwright] Triggering APK download via browser session: {final_link}")
             with page.expect_download(timeout=300_000) as dl_info:
-                a_tag = page.query_selector("a[href*='download.php']")
+                a_tag = (
+                    page.query_selector("a[href*='key=']")
+                    or page.query_selector("a.downloadButton")
+                    or page.query_selector("a.accent_bg")
+                    or page.query_selector("a[href*='download.php']")
+                )
                 if a_tag:
                     a_tag.click()
                 else:
