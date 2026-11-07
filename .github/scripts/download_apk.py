@@ -13,6 +13,9 @@ import argparse
 import urllib.parse
 import json
 import time
+import subprocess
+import shutil
+from pathlib import Path
 
 try:
     from curl_cffi import requests as cffi_requests
@@ -531,12 +534,114 @@ def get_apkmirror_apk_playwright(variant_url, output_path, check_version_only=Fa
 
 
 # ---------------------------------------------------------------------------
+# Fast Version Discovery & Google Play Split Downloader
+# ---------------------------------------------------------------------------
+
+def check_version_feed():
+    """Fetches latest Google Photos version instantly via APKMirror RSS feed (<500ms)."""
+    try:
+        import urllib.request
+        feed_url = "https://www.apkmirror.com/apk/google-inc/photos/feed/"
+        req = urllib.request.Request(feed_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode("utf-8", errors="ignore")
+            match = re.search(r"<title>Google Photos ([0-9.]+)", content)
+            if match:
+                ver = match.group(1).rstrip(".")
+                print(f"[APKMirror Feed] Fast version discovery found: {ver}")
+                return ver
+    except Exception as e:
+        print(f"[APKMirror Feed] Fast check notice (will fallback): {e}")
+    return None
+
+
+def download_google_play_splits(output_path):
+    """
+    Downloads Google Photos splits from Google Play using goopdl and merges them
+    into a single universal standalone APK using REAndroid APKEditor.
+    """
+    goopdl_bin = shutil.which("goopdl")
+    apkeditor_jar = os.environ.get("APKEDITOR_JAR", "APKEditor.jar")
+    if not goopdl_bin or not os.path.exists(apkeditor_jar):
+        print(f"[Google Play] Skipping: goopdl={bool(goopdl_bin)}, APKEditor.jar={os.path.exists(apkeditor_jar)}")
+        return False, None
+
+    splits_dir = Path("tmp_google_play_splits")
+    if splits_dir.exists():
+        shutil.rmtree(splits_dir, ignore_errors=True)
+    splits_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        print("\n=== [Source 1/2] Attempting Google Play direct download via goopdl ===")
+        cmd = [
+            goopdl_bin,
+            "download",
+            "com.google.android.apps.photos",
+            "--splits",
+            "-a", "arm64",
+            "-o", str(splits_dir),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            err = res.stderr.strip() or res.stdout.strip()
+            print(f"[Google Play] goopdl exited with {res.returncode}: {err}")
+            return False, None
+
+        split_apks = list(splits_dir.glob("*.apk"))
+        if not split_apks:
+            print("[Google Play] No split APKs were saved.")
+            return False, None
+
+        base_apk = next((f for f in split_apks if "base" in f.name.lower() or f.name == "com.google.android.apps.photos.apk"), split_apks[0])
+        print(f"[Google Play] Downloaded {len(split_apks)} splits. Verifying base APK signature...")
+
+        verify_script = Path(__file__).parent / "verify_signature.py"
+        if verify_script.exists():
+            v_res = subprocess.run([sys.executable, str(verify_script), str(base_apk)], capture_output=True, text=True)
+            if v_res.returncode != 0:
+                print(f"[Google Play] Signature verification failed:\n{v_res.stdout}\n{v_res.stderr}")
+                return False, None
+            print("[Google Play] Signature verified: authentic Google Inc. binary.")
+
+        print(f"[Google Play] Merging splits into universal APK with {apkeditor_jar}...")
+        merge_cmd = ["java", "-jar", apkeditor_jar, "m", "-i", str(splits_dir), "-o", str(output_path)]
+        m_res = subprocess.run(merge_cmd, capture_output=True, text=True)
+        if m_res.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) < 1_000_000:
+            print(f"[Google Play] Merge failed (exit code {m_res.returncode}): {m_res.stderr.strip()}")
+            return False, None
+
+        print(f"[Google Play] Merge successful: {output_path} ({os.path.getsize(output_path):,} bytes)")
+
+        version_str = "unknown"
+        aapt_bin = shutil.which("aapt")
+        if not aapt_bin:
+            android_home = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+            if android_home:
+                candidates = list(Path(android_home).glob("build-tools/*/aapt"))
+                if candidates:
+                    aapt_bin = str(sorted(candidates, reverse=True)[0])
+        if aapt_bin:
+            aapt_res = subprocess.run([aapt_bin, "dump", "badging", str(output_path)], capture_output=True, text=True)
+            v_match = re.search(r"versionName='([^']+)'", aapt_res.stdout)
+            if v_match:
+                version_str = v_match.group(1)
+
+        return True, version_str
+
+    except Exception as e:
+        print(f"[Google Play] Download/merge error: {e}")
+        return False, None
+    finally:
+        shutil.rmtree(splits_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download Google Photos APK from APKMirror")
+    parser = argparse.ArgumentParser(description="Download Google Photos APK from APKMirror or Google Play")
     parser.add_argument("--direct-url", type=str, help="Skip scraping; download this URL directly")
     parser.add_argument("--variant-url", type=str, default=DEFAULT_VARIANT_URL)
     parser.add_argument("--output", type=str, default="google-photos.apk")
@@ -544,12 +649,34 @@ def main():
     parser.add_argument("--retries", type=int, default=3, help="Max retry attempts for scraping (default: 3)")
     args = parser.parse_args()
 
+    # ---- Fast version check shortcut ----
+    if args.check_version:
+        feed_ver = check_version_feed()
+        if feed_ver:
+            print(f"apk_version={feed_ver}")
+            if "GITHUB_OUTPUT" in os.environ:
+                with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                    f.write(f"apk_version={feed_ver}\n")
+            return
+
     # ---- direct URL shortcut ----
     if args.direct_url:
         print(f"Downloading direct URL: {args.direct_url}")
         download_file(args.direct_url, args.output)
         version_str = "unknown"
     else:
+        # Try Google Play download + merge first if not just checking version
+        if not args.check_version:
+            gp_success, gp_ver = download_google_play_splits(args.output)
+            if gp_success:
+                version_str = gp_ver or "unknown"
+                if "GITHUB_OUTPUT" in os.environ and version_str:
+                    with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                        f.write(f"apk_version={version_str}\n")
+                return
+
+            print("[Downloader] Falling back to [Source 2/2] APKMirror standalone APK...")
+
         version_str = "unknown"
         success = False
         last_error = None
@@ -612,6 +739,12 @@ def main():
             f"Successfully downloaded {args.output} "
             f"({os.path.getsize(args.output):,} bytes)"
         )
+        # Verify cryptographic signature
+        verify_script = Path(__file__).parent / "verify_signature.py"
+        if verify_script.exists():
+            print("Cryptographically validating downloaded APK...")
+            subprocess.run([sys.executable, str(verify_script), str(args.output)], check=True)
+
         if "GITHUB_OUTPUT" in os.environ and version_str:
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write(f"apk_version={version_str}\n")
