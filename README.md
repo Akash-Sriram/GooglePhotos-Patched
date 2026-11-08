@@ -9,17 +9,17 @@ Rebuilt every 6 hours using clean nodpi base APKs from [APKMirror](https://www.a
 
 ---
 
-## 🎯 Minimal "Set-and-Forget" Philosophy
+## 🎯 Features & Patch Set
 
-This repository is purpose-built as a **minimal, set-and-forget setup**. It intentionally avoids heavy patch controls and extra UI hooks, focusing purely on providing the original, stock Google Photos experience with Google Pixel backup spoofing:
+This repository provides automated builds of patched Google Photos with Pixel backup spoofing, engine enhancements, and UI customizability:
 
-* **Stock UI & Look**: Retains Google Photos' official Material You design, default icons, and theme without injecting external settings, debug panels, AMOLED black recolors, or custom branding.
-* **No Patch Control Overhead**: Excludes experimental UI tweaks, the in-app Flag Manager, and the Morphe Toolkit overlay for maximum stability and simplicity.
-* **Core Functionality Only**:
-  * **Pixel Spoofing**: Unlimited Google Photos cloud backup and Pixel-exclusive editor features.
-  * **Media Engine & AI Fixes**: Ensures Magic Eraser, Portrait tools, and custom fonts download and function without mobile data restrictions.
-  * **DCIM & Backup Control**: Granular folder backup toggles so camera screenshots and non-camera folders aren't forced into backup.
-  * **In-App Updater**: Built-in silent check on launch notifying you when a newer patched release is ready on GitHub.
+* **Pixel Spoofing**: Unlimited Google Photos cloud backup at original quality and unlocked Pixel-exclusive editor features.
+* **Flag Manager & Morphe Toolkit**: Accessible right from Photos Settings to toggle experimental Google features, video editor tools, and UI options.
+* **AMOLED Dark Theme**: Deep pitch-black surfaces in dark mode for maximum contrast and OLED battery savings.
+* **Media Engine & AI Fixes**: Ensures Magic Eraser, Portrait tools, and custom fonts download and function without mobile data restrictions.
+* **DCIM & Backup Control**: Granular folder backup toggles so camera screenshots and non-camera folders aren't forced into backup.
+* **In-App Updater**: Built-in silent check on launch notifying you when a newer patched release is ready on GitHub.
+* **MicroG / GmsCore Support**: Enabled across all variants to guarantee Google account sign-in via [MicroG-RE](https://github.com/MorpheApp/MicroG-RE/releases/latest).
 
 ---
 
@@ -34,5 +34,5 @@ This repository is purpose-built as a **minimal, set-and-forget setup**. It inte
 
 | Package | Asset Name | Package ID | Target Audience & Usage |
 |:---|:---|:---|:---|
-| **Mod** *(Recommended)* | `GooglePhotos-v<ver>-mod.apk` | `app.morphe.android.apps.photos` | Non-root users. Installs side-by-side with official Google Photos. Requires [MicroG-RE](https://github.com/MorpheApp/MicroG-RE/releases/latest) for sign-in. |
-| **Original** | `GooglePhotos-v<ver>-original.apk` | `com.google.android.apps.photos` | Rooted users / custom ROMs without pre-installed Google Photos. Keeps stock package ID and includes a Play Store auto-update blocker. |
+| **Mod** *(Recommended)* | `GooglePhotos-v<ver>-mod.apk` | `app.morphe.android.apps.photos` | Non-root users. Installs side-by-side with official Google Photos. Features the Morphe pinwheel icon and "Photos" launcher label. Requires [MicroG-RE](https://github.com/MorpheApp/MicroG-RE/releases/latest) for sign-in. |
+| **Original** | `GooglePhotos-v<ver>-original.apk` | `com.google.android.apps.photos` | Rooted users / custom ROMs without pre-installed Google Photos. Keeps stock package ID, official icon, and includes a Play Store auto-update blocker. Requires [MicroG-RE](https://github.com/MorpheApp/MicroG-RE/releases/latest) for sign-in. |
